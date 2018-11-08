@@ -36,5 +36,5 @@
 		},
 		"package-lock.json": true
 	},
-	"git.enabled": false
+	"git.enabled": true
 }

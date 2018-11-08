@@ -1,4 +1,66 @@
-export class AssertError extends Error {
+const enum TaskStatus {
+	Running = 3,
+	Completed = 5,
+	Canceled = 6,
+	Faulted = 7
+}
+
+class DummyCancellationToken implements CancellationToken {
+	public get isCancellationRequested(): boolean { return false; }
+	public addCancelListener(cb: Function): void {/* Dummy */ }
+	public removeCancelListener(cb: Function): void {/* Dummy */ }
+	public throwIfCancellationRequested(): void {/* Dummy */ }
+}
+class CancellationTokenSourceImpl implements CancellationTokenSource {
+	public readonly token: CancellationToken;
+	private readonly _cancelListeners: Array<Function> = [];
+	private _isCancellationRequested: boolean;
+
+	public constructor() {
+		this._isCancellationRequested = false;
+		const self = this;
+		this.token = {
+			get isCancellationRequested() { return self.isCancellationRequested; },
+			addCancelListener(cb) { self.addCancelListener(cb); },
+			removeCancelListener(cb) { self.removeCancelListener(cb); },
+			throwIfCancellationRequested() { self.throwIfCancellationRequested(); }
+		};
+	}
+
+	public get isCancellationRequested(): boolean { return this._isCancellationRequested; }
+
+	public cancel(): void {
+		if (this._isCancellationRequested) {
+			// Prevent to call listeners twice
+			return;
+		}
+		this._isCancellationRequested = true;
+		const errors: Array<Error> = [];
+		this._cancelListeners.forEach(cancelListener => {
+			try {
+				cancelListener();
+			} catch (e) {
+				errors.push(WrapError.wrapIfNeeded(e));
+			}
+		});
+		if (errors.length > 0) {
+			throw new AggregateError(errors);
+		}
+	}
+
+	private addCancelListener(cb: Function): void { this._cancelListeners.push(cb); }
+	private removeCancelListener(cb: Function): void {
+		const cbIndex = this._cancelListeners.indexOf(cb);
+		if (cbIndex !== -1) { this._cancelListeners.splice(cbIndex, 1); }
+	}
+	private throwIfCancellationRequested(): void {
+		if (this.isCancellationRequested) { throw new CancelledError(); }
+	}
+}
+
+const DummyCancellationTokenInstance = new DummyCancellationToken();
+
+class AssertError extends Error {
 }
 
 export class WrapError extends Error {
@@ -7,9 +69,18 @@ export class WrapError extends Error {
 		super(wrap && wrap.toString());
 		this.wrap = wrap;
 	}
+
+	public static wrapIfNeeded(likeError: any): Error | WrapError {
+		if (likeError instanceof Error) {
+			return likeError;
+		} else {
+			return new WrapError(likeError);
+		}
+
+	}
 }
 
-export class CanceledError extends Error {
+export class CancelledError extends Error {
 }
 
 export class AggregateError extends Error {
@@ -25,7 +96,8 @@ export class AggregateError extends Error {
 
 export interface CancellationToken {
 	readonly isCancellationRequested: boolean;
-	onCancel(cb: Function): void;
+	addCancelListener(cb: Function): void;
+	removeCancelListener(cb: Function): void;
 	throwIfCancellationRequested(): void;
 }
 
@@ -37,33 +109,35 @@ export interface CancellationTokenSource {
 
 export class Task<T> {
 	private readonly _promise: Promise<void>;
-	private readonly _cancellationToken: CancellationToken | null;
 	private _result: T | undefined;
 	private _error: Error | undefined;
 	private _status: TaskStatus;
-	public constructor(task: () => T | Promise<T>, cancellationToken?: CancellationToken) {
+	public constructor(
+		task: ((cancellationToken: CancellationToken) => T | Promise<T>) | Promise<T>,
+		cancellationToken?: CancellationToken
+	) {
 		this._result = undefined;
 		this._error = undefined;
 		this._status = TaskStatus.Running;
-		this._cancellationToken = cancellationToken || null;
-		this._promise = new Promise((resolve, reject) => {
-			try { resolve(task()); } catch (e) { reject(e); }
-		})
+		const taskCancellationToken = cancellationToken || DummyCancellationTokenInstance;
+		const initPromise: Promise<T> = (task instanceof Promise) ?
+			task :
+			new Promise((resolve, reject) => {
+				try { resolve(task(taskCancellationToken)); } catch (e) { reject(e); }
+			});
+		this._promise = initPromise
 			.then((result: T) => {
 				this._result = result;
 				this._status = TaskStatus.Completed;
 			})
 			.catch(reason => {
-				if (reason instanceof CanceledError) {
+				if (taskCancellationToken.isCancellationRequested || reason instanceof CancelledError) {
 					this._status = TaskStatus.Canceled;
+					this._error = reason;
 					return;
 				}
 				this._status = TaskStatus.Faulted;
-				if (reason instanceof Error) {
-					this._error = reason;
-				} else {
-					this._error = new WrapError(reason);
-				}
+				this._error = WrapError.wrapIfNeeded(reason);
 			});
 	}
 
@@ -84,7 +158,30 @@ export class Task<T> {
 
 	public async wait(): Promise<void> {
 		await this._promise; // Never failed
-		if (this.isFaulted) { throw this._error; }
+		if (typeof this._error !== "undefined") { throw this._error; }
+	}
+
+	public static createCancellationTokenSource(): CancellationTokenSource {
+		return new CancellationTokenSourceImpl();
+	}
+
+	public static sleep(ms: number, cancellationToken?: CancellationToken): Task<void> {
+		function worker(token: CancellationToken) {
+			return new Promise<void>((resolve, reject) => {
+				const timeout = setTimeout(function () {
+					token.removeCancelListener(cancelCallback);
+					resolve();
+				}, ms);
+				function cancelCallback() {
+					token.removeCancelListener(cancelCallback);
+					clearTimeout(timeout);
+					reject(new CancelledError());
+				}
+				token.addCancelListener(cancelCallback);
+			});
+		}
+
+		return new Task(worker, cancellationToken);
 	}
 
 	// tslint:disable:max-line-length
@@ -104,12 +201,7 @@ export class Task<T> {
 		let errors: Array<Error> = [];
 		for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
 			const task = tasks[taskIndex];
-			if (task.isCancelled) { throw new CanceledError(); }
-			if (task.isFaulted) {
-				if (typeof task._error === "undefined") {
-					// Never happened
-					throw new AssertError();
-				}
+			if (typeof task._error !== "undefined") {
 				errors.push(task._error);
 			}
 		}
@@ -124,46 +216,3 @@ export class Task<T> {
 }
 
 export default Task;
-
-const enum TaskStatus {
-	Running = 3,
-	Completed = 5,
-	Canceled = 6,
-	Faulted = 7
-}
-
-// namespace taskImpl {
-
-
-// 	class CancelationTokenSource implements task.CancellationTokenSource {
-// 		public readonly token: task.CancellationToken;
-// 		private _isCancellationRequested: boolean;
-
-// 		public constructor() {
-// 			const self = this;
-// 			this.token = {
-// 				get isCancellationRequested() { return self.isCancellationRequested; },
-// 				onCancel(cb) { return self.onCancel(cb); },
-// 				throwIfCancellationRequested() { return self.throwIfCancellationRequested(); }
-// 			};
-// 			this._isCancellationRequested = false;
-// 		}
-
-// 		public cancel(): void {
-// 			this._isCancellationRequested = true;
-// 			// TODO call callbacks
-// 		}
-// 		public get isCancellationRequested(): boolean {
-// 			return this._isCancellationRequested;
-// 		}
-
-// 		private onCancel(cb: Function): void {
-// 			//
-// 		}
-// 		private throwIfCancellationRequested(): void {
-// 			if (this.isCancellationRequested) {
-// 				throw new OperationCanceledError();
-// 			}
-// 		}
-// 	}
-// }
