@@ -2,11 +2,12 @@ import { assert } from "chai";
 
 import { Task, AggregateError, CancelledError, WrapError } from "../src/index";
 
+
 describe("Generic tests", () => {
 	it("Should wait for synchronous task", async () => {
 		const task1 = new Task<number>(() => 42);
 
-		await task1.wait();
+		await task1;
 
 		assert.isTrue(task1.isCompleted);
 		assert.isFalse(task1.isCancelled);
@@ -16,17 +17,7 @@ describe("Generic tests", () => {
 	it("Should wait for asynchronous task", async () => {
 		const task1 = new Task<number>(() => Promise.resolve(42));
 
-		await task1.wait();
-
-		assert.isTrue(task1.isCompleted);
-		assert.isFalse(task1.isCancelled);
-		assert.isFalse(task1.isFaulted);
-		assert.equal(task1.result, 42);
-	});
-	it("Should wait for Promise task", async () => {
-		const task1 = new Task<number>(Promise.resolve(42));
-
-		await task1.wait();
+		await task1;
 
 		assert.isTrue(task1.isCompleted);
 		assert.isFalse(task1.isCancelled);
@@ -58,14 +49,16 @@ describe("Generic tests", () => {
 		const task2 = new Task<string>(() => "42");
 		const task3 = new Task<boolean>(() => true);
 
-		await Task.waitAll(task1, task2);
+		await Task.waitAll(task1, task2, task3);
 
 		assert.isTrue(task1.isCompleted);
 		assert.isFalse(task1.isCancelled);
 		assert.isFalse(task1.isFaulted);
+
 		assert.isTrue(task2.isCompleted);
 		assert.isFalse(task2.isCancelled);
 		assert.isFalse(task2.isFaulted);
+
 		assert.isTrue(task3.isCompleted);
 		assert.isFalse(task3.isCancelled);
 		assert.isFalse(task3.isFaulted);
@@ -79,14 +72,16 @@ describe("Generic tests", () => {
 		const task2 = new Task<string>(() => Promise.resolve("42"));
 		const task3 = new Task<boolean>(() => Promise.resolve(true));
 
-		await Task.waitAll(task1, task2);
+		await Task.waitAll(task1, task2, task3);
 
 		assert.isTrue(task1.isCompleted);
 		assert.isFalse(task1.isCancelled);
 		assert.isFalse(task1.isFaulted);
+
 		assert.isTrue(task2.isCompleted);
 		assert.isFalse(task2.isCancelled);
 		assert.isFalse(task2.isFaulted);
+
 		assert.isTrue(task3.isCompleted);
 		assert.isFalse(task3.isCancelled);
 		assert.isFalse(task3.isFaulted);
@@ -100,14 +95,16 @@ describe("Generic tests", () => {
 		const task2 = new Task<string>(() => "42");
 		const task3 = new Task<boolean>(() => Promise.resolve(true));
 
-		await Task.waitAll(task1, task2);
+		await Task.waitAll(task1, task2, task3);
 
 		assert.isTrue(task1.isCompleted);
 		assert.isFalse(task1.isCancelled);
 		assert.isFalse(task1.isFaulted);
+
 		assert.isTrue(task2.isCompleted);
 		assert.isFalse(task2.isCancelled);
 		assert.isFalse(task2.isFaulted);
+
 		assert.isTrue(task3.isCompleted);
 		assert.isFalse(task3.isCancelled);
 		assert.isFalse(task3.isFaulted);
@@ -123,10 +120,25 @@ describe("Generic tests", () => {
 
 		let expectedError;
 		try {
-			await task1.wait();
+			await task1;
 		} catch (e) {
 			expectedError = e;
 		}
+
+		assert.isTrue(task1.isCompleted);
+		assert.isFalse(task1.isCancelled);
+		assert.isTrue(task1.isFaulted);
+		assert.isDefined(expectedError);
+		assert.instanceOf(expectedError, TestError);
+		assert.equal(expectedError.message, "Fake Error");
+	});
+	it("Should handle error fail for synchronous task via catch()", async () => {
+		class TestError extends Error { }
+
+		const task1 = new Task<number>(() => { throw new TestError("Fake Error"); });
+
+		let expectedError: any;
+		await task1.catch((reason) => expectedError = reason);
 
 		assert.isTrue(task1.isCompleted);
 		assert.isFalse(task1.isCancelled);
@@ -142,7 +154,7 @@ describe("Generic tests", () => {
 
 		let expectedError;
 		try {
-			await task1.wait();
+			await task1;
 		} catch (e) {
 			expectedError = e;
 		}
@@ -178,7 +190,7 @@ describe("Generic tests", () => {
 
 		let expectedError;
 		try {
-			await task1.wait();
+			await task1;
 		} catch (e) {
 			expectedError = e;
 		}
@@ -195,7 +207,7 @@ describe("Generic tests", () => {
 
 		let expectedError;
 		try {
-			await task1.wait();
+			await task1;
 		} catch (e) {
 			expectedError = e;
 		}
@@ -475,14 +487,17 @@ describe("Generic tests", () => {
 		assert.equal(expectedError.innerErrors[1].message, "Fake Error 3");
 	});
 	it("Should cancel a task via CancelListener", async () => {
-		class MyCancelError extends Error { }
+		class MyCancelError extends CancelledError { }
 		const cancellationTokenSource = Task.createCancellationTokenSource();
 		let isTimeoutHappened = false;
 		const task1 = new Task<number>(
 			(token) => {
 				// Fake long task
 				return new Promise<number>((resolve, reject) => {
-					const timeout = setTimeout(() => { isTimeoutHappened = true; resolve(42); }, 1000);
+					const timeout = setTimeout(() => {
+						isTimeoutHappened = true;
+						resolve(42);
+					}, 1000);
 					token.addCancelListener(() => {
 						clearTimeout(timeout);
 						reject(new MyCancelError("Cancelled while wait for timer"));
@@ -490,13 +505,13 @@ describe("Generic tests", () => {
 				});
 			},
 			cancellationTokenSource.token
-		);
+		).start();
 
 		let expectedError;
 		try {
-			const taskPromise = task1.wait();
+			await Task.sleep(50); // give a time for start task1
 			cancellationTokenSource.cancel();
-			await taskPromise;
+			await task1;
 		} catch (e) {
 			expectedError = e;
 		}
@@ -510,12 +525,12 @@ describe("Generic tests", () => {
 		assert.isFalse(task1.isFaulted);
 	});
 	it("Should cancel a task via isCancellationRequested", async () => {
-		class MyCancelError extends Error { }
+		class MyCancelError extends CancelledError { }
 		const cancellationTokenSource = Task.createCancellationTokenSource();
 		const task1 = new Task<number>(
 			async (token) => {
 				for (let index = 0; index < 10; index++) {
-					await Task.sleep(10).wait();
+					await Task.sleep(10);
 					if (token.isCancellationRequested) {
 						throw new MyCancelError("Cancelled while wait for timer");
 					}
@@ -527,9 +542,10 @@ describe("Generic tests", () => {
 
 		let expectedError;
 		try {
-			const taskPromise = task1.wait();
+			task1.start();
+			await Task.sleep(50);
 			cancellationTokenSource.cancel();
-			await taskPromise;
+			await task1;
 		} catch (e) {
 			expectedError = e;
 		}
@@ -548,7 +564,7 @@ describe("Generic tests", () => {
 			async (token) => {
 				for (let index = 0; index < 10; index++) {
 					token.throwIfCancellationRequested();
-					await Task.sleep(10).wait();
+					await Task.sleep(10);
 				}
 				return 42;
 			},
@@ -574,14 +590,14 @@ describe("Generic tests", () => {
 		const task1 = new Task<number>(
 			async (token) => {
 				for (let index = 0; index < 10; index++) {
-					await Task.sleep(10).wait();
+					await Task.sleep(10);
 					token.throwIfCancellationRequested();
 				}
 				return 42;
 			}
 		);
 
-		await task1.wait();
+		await task1;
 
 		assert.isTrue(task1.isCompleted);
 		assert.isFalse(task1.isCancelled);
@@ -608,7 +624,7 @@ describe("Generic tests", () => {
 			cancellationTokenSource.token
 		);
 
-		const taskPromise = task1.wait();
+		const taskPromise = task1;
 		cancellationTokenSource.cancel();
 		await taskPromise;
 
@@ -640,7 +656,7 @@ describe("Generic tests", () => {
 			cancellationTokenSource.token
 		);
 
-		const taskPromise = task1.wait();
+		const taskPromise = task1;
 		cancellationTokenSource.cancel();
 		await taskPromise;
 
@@ -657,7 +673,7 @@ describe("Generic tests", () => {
 			cancellationTokenSource.token
 		);
 
-		const taskPromise = task1.wait();
+		const taskPromise = task1;
 		cancellationTokenSource.cancel();
 		cancellationTokenSource.cancel();
 		cancellationTokenSource.cancel();
@@ -698,7 +714,7 @@ describe("Generic tests", () => {
 		{
 			let expectedError;
 			try {
-				await task1.wait();
+				await task1;
 			} catch (e) {
 				expectedError = e;
 			}
@@ -724,16 +740,16 @@ describe("Generic tests", () => {
 			assert.include(expectedError2.message, "Invalid operation");
 		}
 	});
-	it("Should cancel sleep()", async () => {
+	it("Should cancel sleep() before started", async () => {
 		const cancellationTokenSource = Task.createCancellationTokenSource();
 		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
-		await Task.sleep(25).wait();
+		await Task.sleep(25);
 
 		cancellationTokenSource.cancel();
 
 		let expectedError;
 		try {
-			await sleepTask.wait();
+			await sleepTask;
 		} catch (e) {
 			expectedError = e;
 		}
@@ -741,8 +757,25 @@ describe("Generic tests", () => {
 		assert.isDefined(expectedError);
 		assert.instanceOf(expectedError, CancelledError);
 	});
-	it("Should raise error AggregateError when no innerErrors", async () => {
+	it("Should cancel sleep() after start", async () => {
+		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const sleepTask = Task.sleep(1000, cancellationTokenSource.token).start();
+		await Task.sleep(25);
+
+		cancellationTokenSource.cancel();
+
 		let expectedError;
+		try {
+			await sleepTask;
+		} catch (e) {
+			expectedError = e;
+		}
+
+		assert.isDefined(expectedError);
+		assert.instanceOf(expectedError, CancelledError);
+	});
+	it("Should not create an instace of AggregateError when no innerErrors", async () => {
+		let expectedError: any = null;
 		try {
 			throw new AggregateError([]);
 		} catch (e) {
@@ -750,6 +783,7 @@ describe("Generic tests", () => {
 		}
 
 		assert.isDefined(expectedError);
+		assert.isNotNull(expectedError);
 		assert.notInstanceOf(expectedError, AggregateError);
 	});
 });

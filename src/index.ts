@@ -1,6 +1,7 @@
 const enum TaskStatus {
+	Created = 0,
 	Running = 3,
-	Completed = 5,
+	CompletedSuccessfully = 5,
 	Canceled = 6,
 	Faulted = 7
 }
@@ -107,47 +108,41 @@ export interface CancellationTokenSource {
 	cancel(): void;
 }
 
-export class Task<T> {
-	private readonly _promise: Promise<void>;
-	private _result: T | undefined;
-	private _error: Error | undefined;
+export class Task<T> implements PromiseLike<T> {
+	private readonly _task: (cancellationToken: CancellationToken) => T | Promise<T>;
+	private readonly _cancellationToken: CancellationToken;
+	private _taskWorker: Promise<void> | null;
+	private _result: T;
+	private _error: Error;
 	private _status: TaskStatus;
+
 	public constructor(
-		task: ((cancellationToken: CancellationToken) => T | Promise<T>) | Promise<T>,
+		task: (cancellationToken: CancellationToken) => T | Promise<T>,
 		cancellationToken?: CancellationToken
 	) {
-		this._result = undefined;
-		this._error = undefined;
-		this._status = TaskStatus.Running;
-		const taskCancellationToken = cancellationToken || DummyCancellationTokenInstance;
-		const initPromise: Promise<T> = (task instanceof Promise) ?
-			task :
-			new Promise((resolve, reject) => {
-				try { resolve(task(taskCancellationToken)); } catch (e) { reject(e); }
-			});
-		this._promise = initPromise
-			.then((result: T) => {
-				this._result = result;
-				this._status = TaskStatus.Completed;
-			})
-			.catch(reason => {
-				if (taskCancellationToken.isCancellationRequested || reason instanceof CancelledError) {
-					this._status = TaskStatus.Canceled;
-					this._error = reason;
-					return;
-				}
-				this._status = TaskStatus.Faulted;
-				this._error = WrapError.wrapIfNeeded(reason);
-			});
+		this._task = task;
+		this._cancellationToken = cancellationToken || DummyCancellationTokenInstance;
+
+		this._taskWorker = null;
+		this._status = TaskStatus.Created;
 	}
 
+	public get error(): Error {
+		if (this._status === TaskStatus.Faulted) {
+			return this._error;
+		}
+		throw new Error("Invalid operation at current state");
+	}
 	public get result(): T {
-		if (typeof this._result !== "undefined") { return this._result; }
-		throw new Error("Invalid operation. A task does not have result.");
+		if (this._status === TaskStatus.CompletedSuccessfully) { return this._result; }
+		throw new Error("Invalid operation at current state");
 	}
 
 	public get isCompleted(): boolean {
-		return this._status === TaskStatus.Completed || this.isFaulted || this.isCancelled;
+		return this._status === TaskStatus.CompletedSuccessfully || this.isFaulted || this.isCancelled;
+	}
+	public get isCompletedSuccessfully(): boolean {
+		return this._status === TaskStatus.CompletedSuccessfully;
 	}
 	public get isFaulted(): boolean {
 		return this._status === TaskStatus.Faulted;
@@ -156,9 +151,64 @@ export class Task<T> {
 		return this._status === TaskStatus.Canceled;
 	}
 
-	public async wait(): Promise<void> {
-		await this._promise; // Never failed
-		if (typeof this._error !== "undefined") { throw this._error; }
+	public async then<TResult1 = T, TResult2 = never>(
+		onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null,
+		onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null
+	): Promise<TResult1 | TResult2> {
+		if (this._status === TaskStatus.Created) { this.start(); }
+		if (this._taskWorker === null) { throw new AssertError(); }
+
+		if (onfulfilled && (this._status === TaskStatus.CompletedSuccessfully)) { return onfulfilled(this.result); }
+		if (onrejected && (this._status === TaskStatus.Faulted || this._status === TaskStatus.Canceled)) { return onrejected(this._error); }
+
+		let resultPromise: any = this._taskWorker; // _taskWorker never fails
+		if (onfulfilled || onrejected) {
+			resultPromise = resultPromise.then(() => {
+				if (onfulfilled) {
+					if (this._status === TaskStatus.CompletedSuccessfully) {
+						return onfulfilled(this.result);
+					}
+				}
+				if (onrejected) {
+					if (this._status === TaskStatus.Canceled) {
+						return onrejected(this._error instanceof CancelledError ? this._error : new CancelledError());
+					} else {
+						return onrejected(this.error);
+					}
+				}
+			});
+		}
+		return resultPromise;
+	}
+
+	public catch<TResult = never>(
+		onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null
+	): Promise<T | TResult> {
+		return this.then(undefined, onrejected);
+	}
+
+	public start(): this {
+		if (this._status !== TaskStatus.Created) { throw new Error("Invalid operation at current state. The task already started"); }
+		if (this._taskWorker !== null) { throw new AssertError("this._taskWorker !== null"); }
+		const taskWorker = Promise.resolve()
+			.then(() => this._task(this._cancellationToken))
+			.then((result) => {
+				this._result = result;
+				this._status = TaskStatus.CompletedSuccessfully;
+			})
+			.catch((err) => {
+				if (this._cancellationToken.isCancellationRequested || err instanceof CancelledError) {
+					this._status = TaskStatus.Canceled;
+					if (err instanceof CancelledError) { this._error = err; }
+					return;
+				}
+				this._status = TaskStatus.Faulted;
+				this._error = WrapError.wrapIfNeeded(err);
+			});
+
+		this._taskWorker = taskWorker;
+		this._status = TaskStatus.Running;
+		return this;
 	}
 
 	public static createCancellationTokenSource(): CancellationTokenSource {
@@ -168,14 +218,17 @@ export class Task<T> {
 	public static sleep(ms: number, cancellationToken?: CancellationToken): Task<void> {
 		function worker(token: CancellationToken) {
 			return new Promise<void>((resolve, reject) => {
+				if (token.isCancellationRequested) {
+					return reject(new CancelledError());
+				}
 				const timeout = setTimeout(function () {
 					token.removeCancelListener(cancelCallback);
-					resolve();
+					return resolve();
 				}, ms);
 				function cancelCallback() {
 					token.removeCancelListener(cancelCallback);
 					clearTimeout(timeout);
-					reject(new CancelledError());
+					return reject(new CancelledError());
 				}
 				token.addCancelListener(cancelCallback);
 			});
@@ -197,12 +250,24 @@ export class Task<T> {
 	public static waitAll<T0, T1>(task0: Task<T0>, task1: Task<T1>): Promise<void>;
 	public static waitAll<T>(task0: Task<T>): Promise<void>;
 	public static async waitAll(...tasks: Array<Task<any>>): Promise<void> {
-		await Promise.all(tasks.map(task => task._promise)); // Never failed
+		await Promise.all(tasks.map(task => {
+			if (task._status === TaskStatus.Created) { task.start(); }
+			if (task._taskWorker === null) { throw new AssertError("Task worker not exist after start"); }
+			return task._taskWorker;
+		})); // Should never failed
 		let errors: Array<Error> = [];
 		for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
 			const task = tasks[taskIndex];
-			if (typeof task._error !== "undefined") {
-				errors.push(task._error);
+			if (task._status === TaskStatus.CompletedSuccessfully) {
+				continue;
+			}
+			if (task._status === TaskStatus.Faulted) {
+				errors.push(task.error);
+			} else if (task._status === TaskStatus.Canceled) {
+				errors.push(new CancelledError());
+			} else {
+				// Should never happened
+				throw new AssertError("Wrong task status");
 			}
 		}
 		if (errors.length > 0) {
