@@ -172,7 +172,7 @@ export class Task<T> implements PromiseLike<T> {
 				if (onrejected) {
 					if (this._status === TaskStatus.Canceled) {
 						return onrejected(this._error instanceof CancelledError ? this._error : new CancelledError());
-					} else {
+					} else if (this._status === TaskStatus.Faulted) {
 						return onrejected(this.error);
 					}
 				}

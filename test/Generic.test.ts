@@ -786,4 +786,17 @@ describe("Generic tests", () => {
 		assert.isNotNull(expectedError);
 		assert.notInstanceOf(expectedError, AggregateError);
 	});
+	it("Should not execute catch() callback. Bug occurs in version 0.0.3", async () => {
+		const task1 = new Task<number>(() => 42);
+
+		let unexpectedReason;
+		await task1.catch((reason) => { unexpectedReason = reason; });
+
+		assert.isUndefined(unexpectedReason);
+
+		assert.isTrue(task1.isCompleted);
+		assert.isFalse(task1.isCancelled);
+		assert.isFalse(task1.isFaulted);
+		assert.equal(task1.result, 42);
+	});
 });
