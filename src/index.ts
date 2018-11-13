@@ -164,16 +164,21 @@ export class Task<T> implements PromiseLike<T> {
 		let resultPromise: any = this._taskWorker; // _taskWorker never fails
 		if (onfulfilled || onrejected) {
 			resultPromise = resultPromise.then(() => {
-				if (onfulfilled) {
-					if (this._status === TaskStatus.CompletedSuccessfully) {
-						return onfulfilled(this.result);
-					}
-				}
-				if (onrejected) {
+				if (this._status === TaskStatus.CompletedSuccessfully) {
+					if (onfulfilled) { return onfulfilled(this.result); }
+					return this.result;
+				} else {
 					if (this._status === TaskStatus.Canceled) {
-						return onrejected(this._error instanceof CancelledError ? this._error : new CancelledError());
+						if (this._error instanceof CancelledError) {
+							if (onrejected) { return onrejected(this._error); }
+							throw this._error;
+						} else {
+							if (onrejected) { return onrejected(new CancelledError()); }
+							throw new CancelledError();
+						}
 					} else if (this._status === TaskStatus.Faulted) {
-						return onrejected(this.error);
+						if (onrejected) { return onrejected(this.error); }
+						throw this.error;
 					}
 				}
 			});

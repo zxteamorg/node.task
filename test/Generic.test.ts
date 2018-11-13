@@ -799,4 +799,18 @@ describe("Generic tests", () => {
 		assert.isFalse(task1.isFaulted);
 		assert.equal(task1.result, 42);
 	});
+	it("Should not execute catch() callback and returns result. Bug occurs in version 0.0.4", async () => {
+		const task1 = new Task<number>(() => 42);
+
+		let unexpectedReason;
+		const result = await task1.catch((reason) => { unexpectedReason = reason; });
+
+		assert.isUndefined(unexpectedReason);
+
+		assert.isTrue(task1.isCompleted);
+		assert.isFalse(task1.isCancelled);
+		assert.isFalse(task1.isFaulted);
+		assert.equal(task1.result, 42);
+		assert.equal(result, 42);
+	});
 });
