@@ -813,4 +813,30 @@ describe("Generic tests", () => {
 		assert.equal(task1.result, 42);
 		assert.equal(result, 42);
 	});
+	it("Should be able to pass array of tasks to waitAll()", async () => {
+		const task0 = new Task<string>(() => "forty two");
+		const task1 = new Task<boolean>(() => false);
+		const task2 = new Task<number>(() => 42);
+
+		const tasks: Array<Task<any>> = [task0, task1, task2];
+
+		await Task.waitAll(tasks);
+
+		assert.isTrue(task0.isCompletedSuccessfully);
+		assert.isTrue(task1.isCompletedSuccessfully);
+		assert.isTrue(task2.isCompletedSuccessfully);
+	});
+	it("Should be able to pass array of tasks to waitAll() via destruction", async () => {
+		const task0 = new Task<string>(() => "forty two");
+		const task1 = new Task<boolean>(() => false);
+		const task2 = new Task<number>(() => 42);
+
+		const tasks: Array<Task<any>> = [task0, task1, task2];
+
+		await Task.waitAll(...tasks);
+
+		assert.isTrue(task0.isCompletedSuccessfully);
+		assert.isTrue(task1.isCompletedSuccessfully);
+		assert.isTrue(task2.isCompletedSuccessfully);
+	});
 });

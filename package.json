@@ -1,6 +1,6 @@
 {
 	"name": "ptask.js",
-	"version": "0.0.5",
+	"version": "0.0.6",
 	"description": "Promise as Task",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",

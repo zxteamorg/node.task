@@ -254,8 +254,17 @@ export class Task<T> implements PromiseLike<T> {
 	public static waitAll<T0, T1, T2>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>): Promise<void>;
 	public static waitAll<T0, T1>(task0: Task<T0>, task1: Task<T1>): Promise<void>;
 	public static waitAll<T>(task0: Task<T>): Promise<void>;
-	public static async waitAll(...tasks: Array<Task<any>>): Promise<void> {
-		await Promise.all(tasks.map(task => {
+	public static waitAll(tasks: Task<any>[]): Promise<void>;
+	public static waitAll(...tasks: Task<any>[]): Promise<void>;
+	public static async waitAll(...tasks: any): Promise<void> {
+		if (!tasks) { throw new Error("Wrong arguments"); }
+		if (tasks.length === 0) { return Promise.resolve(); }
+		if (tasks.length === 1) {
+			if (Array.isArray(tasks[0])) {
+				tasks = tasks[0];
+			}
+		}
+		await Promise.all(tasks.map((task: any) => {
 			if (task._status === TaskStatus.Created) { task.start(); }
 			if (task._taskWorker === null) { throw new AssertError("Task worker not exist after start"); }
 			return task._taskWorker;
