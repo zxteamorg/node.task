@@ -1,6 +1,6 @@
 {
-	"name": "ptask.js",
-	"version": "0.0.6",
+	"name": "@zxteam/task",
+	"version": "0.0.1",
 	"description": "Promise as Task",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
@@ -17,12 +17,8 @@
 	],
 	"license": "MIT",
 	"devDependencies": {
-		"@zxnode/build": "0.0.23",
-		"mocha-allure-reporter": "^1.4.0",
-		"mocha-multi-reporters": "^1.1.7",
-		"nyc": "^13.1.0"
+		"@zxnode/build": "0.0.30"
 	},
-	"dependencies": {},
 	"keywords": [],
 	"repository": {
 		"type": "git",

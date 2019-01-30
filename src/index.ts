@@ -6,14 +6,14 @@ const enum TaskStatus {
 	Faulted = 7
 }
 
-class DummyCancellationToken implements CancellationToken {
+class DummyCancellationToken implements CancellationTokenLike {
 	public get isCancellationRequested(): boolean { return false; }
 	public addCancelListener(cb: Function): void {/* Dummy */ }
 	public removeCancelListener(cb: Function): void {/* Dummy */ }
 	public throwIfCancellationRequested(): void {/* Dummy */ }
 }
-class CancellationTokenSourceImpl implements CancellationTokenSource {
-	public readonly token: CancellationToken;
+class CancellationTokenSourceImpl implements CancellationTokenSourceLike {
+	public readonly token: CancellationTokenLike;
 	private readonly _cancelListeners: Array<Function> = [];
 	private _isCancellationRequested: boolean;
 
@@ -95,30 +95,30 @@ export class AggregateError extends Error {
 	}
 }
 
-export interface CancellationToken {
+export interface CancellationTokenLike {
 	readonly isCancellationRequested: boolean;
 	addCancelListener(cb: Function): void;
 	removeCancelListener(cb: Function): void;
 	throwIfCancellationRequested(): void;
 }
 
-export interface CancellationTokenSource {
+export interface CancellationTokenSourceLike {
 	readonly isCancellationRequested: boolean;
-	readonly token: CancellationToken;
+	readonly token: CancellationTokenLike;
 	cancel(): void;
 }
 
 export class Task<T> implements PromiseLike<T> {
-	private readonly _task: (cancellationToken: CancellationToken) => T | Promise<T>;
-	private readonly _cancellationToken: CancellationToken;
+	private readonly _task: (cancellationToken: CancellationTokenLike) => T | Promise<T>;
+	private readonly _cancellationToken: CancellationTokenLike;
 	private _taskWorker: Promise<void> | null;
 	private _result: T;
 	private _error: Error;
 	private _status: TaskStatus;
 
 	public constructor(
-		task: (cancellationToken: CancellationToken) => T | Promise<T>,
-		cancellationToken?: CancellationToken
+		task: (cancellationToken: CancellationTokenLike) => T | Promise<T>,
+		cancellationToken?: CancellationTokenLike
 	) {
 		this._task = task;
 		this._cancellationToken = cancellationToken || DummyCancellationTokenInstance;
@@ -216,12 +216,12 @@ export class Task<T> implements PromiseLike<T> {
 		return this;
 	}
 
-	public static createCancellationTokenSource(): CancellationTokenSource {
+	public static createCancellationTokenSource(): CancellationTokenSourceLike {
 		return new CancellationTokenSourceImpl();
 	}
 
-	public static sleep(ms: number, cancellationToken?: CancellationToken): Task<void> {
-		function worker(token: CancellationToken) {
+	public static sleep(ms: number, cancellationToken?: CancellationTokenLike): Task<void> {
+		function worker(token: CancellationTokenLike) {
 			return new Promise<void>((resolve, reject) => {
 				if (token.isCancellationRequested) {
 					return reject(new CancelledError());
