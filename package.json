@@ -1,6 +1,6 @@
 {
-	"name": "@zxteam/task",
-	"version": "0.0.1",
+	"name": "ptask.js",
+	"version": "0.0.7",
 	"description": "Promise as Task",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
