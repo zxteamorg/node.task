@@ -2,9 +2,9 @@ import { assert } from "chai";
 
 import { Task, AggregateError, CancelledError, WrapError, CancellationTokenLike } from "../src/index";
 
-describe("Regression", () => {
-	describe("0.0.1", () => {
-		it("Should cancel two listeners", async () => {
+describe("Regression", function () {
+	describe("0.0.1", function () {
+		it("Should cancel two listeners", async function () {
 			let cancel1 = false;
 			let cancel2 = false;
 

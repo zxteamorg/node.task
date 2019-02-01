@@ -853,4 +853,33 @@ describe("Generic tests", () => {
 		token.removeCancelListener(cb); // No error
 		assert.throw(() => token.throwIfCancellationRequested(), CancelledError);
 	});
+	it.only("Propery error and result should throw error both in case cancel()", async function () {
+		const cts = Task.createCancellationTokenSource();
+
+		const task = new Task(async (token) => {
+			while (true) {
+				token.throwIfCancellationRequested(); // wait for cancel
+				await new Promise(r => setTimeout(r, 5));
+			}
+		}, cts.token).start();
+
+		await new Promise(r => setTimeout(r, 5));
+
+		assert.isFalse(task.isCancelled);
+		assert.isFalse(task.isCompleted);
+		assert.isFalse(task.isCompletedSuccessfully);
+		assert.isFalse(task.isFaulted);
+
+		cts.cancel();
+
+		await new Promise(r => setTimeout(r, 25));
+
+		assert.isTrue(task.isCancelled);
+		assert.isTrue(task.isCompleted);
+		assert.isFalse(task.isCompletedSuccessfully);
+		assert.isFalse(task.isFaulted);
+
+		assert.throw(() => task.result, Error);
+		assert.throw(() => task.error, Error);
+	});
 });
