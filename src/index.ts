@@ -37,13 +37,17 @@ class CancellationTokenSourceImpl implements CancellationTokenSourceLike {
 		}
 		this._isCancellationRequested = true;
 		const errors: Array<Error> = [];
-		this._cancelListeners.forEach(cancelListener => {
-			try {
-				cancelListener();
-			} catch (e) {
-				errors.push(WrapError.wrapIfNeeded(e));
-			}
-		});
+		if (this._cancelListeners.length > 0) {
+			const cancelListenersCopy = this._cancelListeners.slice();
+			// We copy original array due callback can modify original array via removeCancelListener()
+			cancelListenersCopy.forEach(cancelListener => {
+				try {
+					cancelListener();
+				} catch (e) {
+					errors.push(WrapError.wrapIfNeeded(e));
+				}
+			});
+		}
 		if (errors.length > 0) {
 			throw new AggregateError(errors);
 		}
