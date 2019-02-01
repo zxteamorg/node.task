@@ -4,7 +4,7 @@ import { Task, AggregateError, CancelledError, WrapError, CancellationTokenLike 
 
 
 describe("0.0.1", () => {
-	it.only("Should cancel two listeners", async () => {
+	it("Should cancel two listeners", async () => {
 		let cancel1 = false;
 		let cancel2 = false;
 

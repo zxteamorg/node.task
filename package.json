@@ -29,7 +29,8 @@
 	},
 	"homepage": "https://github.com/zxteamorg/ptask.js#readme",
 	"scripts": {
-		"test": "nyc --exclude submodules --exclude test --reporter=lcov --reporter=text --reporter=text-summary mocha 'test/**/*.test.js' --recursive --reporter mocha-multi-reporters --reporter-options configFile=test/config.json"
+		"build": "zxbuild clean dist",
+		"test": "nyc --exclude submodules --exclude test --reporter=lcov --reporter=text --reporter=text-summary mocha \"test/**/*.test.js\" --recursive"
 	},
 	"private": true
 }
