@@ -47,6 +47,10 @@ class CancellationTokenSourceImpl implements CancellationTokenSourceLike {
 					errors.push(WrapError.wrapIfNeeded(e));
 				}
 			});
+			if (this._cancelListeners.length > 0) {
+				// Release callback. We do not need its anymore
+				this._cancelListeners.splice(0);
+			}
 		}
 		if (errors.length > 0) {
 			throw new AggregateError(errors);
@@ -56,10 +60,14 @@ class CancellationTokenSourceImpl implements CancellationTokenSourceLike {
 	private addCancelListener(cb: Function): void { this._cancelListeners.push(cb); }
 	private removeCancelListener(cb: Function): void {
 		const cbIndex = this._cancelListeners.indexOf(cb);
-		if (cbIndex !== -1) { this._cancelListeners.splice(cbIndex, 1); }
+		if (cbIndex !== -1) {
+			this._cancelListeners.splice(cbIndex, 1);
+		}
 	}
 	private throwIfCancellationRequested(): void {
-		if (this.isCancellationRequested) { throw new CancelledError(); }
+		if (this.isCancellationRequested) {
+			throw new CancelledError();
+		}
 	}
 }
 

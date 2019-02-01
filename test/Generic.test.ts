@@ -839,4 +839,18 @@ describe("Generic tests", () => {
 		assert.isTrue(task1.isCompletedSuccessfully);
 		assert.isTrue(task2.isCompletedSuccessfully);
 	});
+	it("Should auto relase callbacks on cancel()", async () => {
+		const cts = Task.createCancellationTokenSource();
+		const cancelListeners = (cts as any)._cancelListeners;
+		const token = cts.token;
+		assert.isArray(cancelListeners);
+		assert.equal(cancelListeners.length, 0, "cancelListeners should have no any listeners");
+		const cb = () => { /* stub */ };
+		token.addCancelListener(cb);
+		assert.equal(cancelListeners.length, 1, "cancelListeners should have one listener");
+		cts.cancel();
+		assert.equal(cancelListeners.length, 0, "cancelListeners should have no any listeners after cts.cancel()");
+		token.removeCancelListener(cb); // No error
+		assert.throw(() => token.throwIfCancellationRequested(), CancelledError);
+	});
 });
