@@ -1,7 +1,9 @@
+import { CancellationTokenLike, TaskLike } from "@zxteam/contract";
+
 const enum TaskStatus {
 	Created = 0,
 	Running = 3,
-	CompletedSuccessfully = 5,
+	Successed = 5,
 	Canceled = 6,
 	Faulted = 7
 }
@@ -107,12 +109,12 @@ export class AggregateError extends Error {
 	}
 }
 
-export interface CancellationTokenLike {
-	readonly isCancellationRequested: boolean;
-	addCancelListener(cb: Function): void;
-	removeCancelListener(cb: Function): void;
-	throwIfCancellationRequested(): void;
-}
+// export interface CancellationTokenLike {
+// 	readonly isCancellationRequested: boolean;
+// 	addCancelListener(cb: Function): void;
+// 	removeCancelListener(cb: Function): void;
+// 	throwIfCancellationRequested(): void;
+// }
 
 export interface CancellationTokenSourceLike {
 	readonly isCancellationRequested: boolean;
@@ -120,7 +122,7 @@ export interface CancellationTokenSourceLike {
 	cancel(): void;
 }
 
-export class Task<T> implements PromiseLike<T> {
+export class Task<T> implements TaskLike<T> {
 	private readonly _task: (cancellationToken: CancellationTokenLike) => T | Promise<T>;
 	private readonly _cancellationToken: CancellationTokenLike;
 	private _taskWorker: Promise<void> | null;
@@ -146,15 +148,15 @@ export class Task<T> implements PromiseLike<T> {
 		throw new Error("Invalid operation at current state");
 	}
 	public get result(): T {
-		if (this._status === TaskStatus.CompletedSuccessfully) { return this._result; }
+		if (this._status === TaskStatus.Successed) { return this._result; }
 		throw new Error("Invalid operation at current state");
 	}
 
 	public get isCompleted(): boolean {
-		return this._status === TaskStatus.CompletedSuccessfully || this.isFaulted || this.isCancelled;
+		return this._status === TaskStatus.Successed || this.isFaulted || this.isCancelled;
 	}
-	public get isCompletedSuccessfully(): boolean {
-		return this._status === TaskStatus.CompletedSuccessfully;
+	public get isSuccessed(): boolean {
+		return this._status === TaskStatus.Successed;
 	}
 	public get isFaulted(): boolean {
 		return this._status === TaskStatus.Faulted;
@@ -170,13 +172,13 @@ export class Task<T> implements PromiseLike<T> {
 		if (this._status === TaskStatus.Created) { this.start(); }
 		if (this._taskWorker === null) { throw new AssertError(); }
 
-		if (onfulfilled && (this._status === TaskStatus.CompletedSuccessfully)) { return onfulfilled(this.result); }
+		if (onfulfilled && (this._status === TaskStatus.Successed)) { return onfulfilled(this.result); }
 		if (onrejected && (this._status === TaskStatus.Faulted || this._status === TaskStatus.Canceled)) { return onrejected(this._error); }
 
 		let resultPromise: any = this._taskWorker; // _taskWorker never fails
 		if (onfulfilled || onrejected) {
 			resultPromise = resultPromise.then(() => {
-				if (this._status === TaskStatus.CompletedSuccessfully) {
+				if (this._status === TaskStatus.Successed) {
 					if (onfulfilled) { return onfulfilled(this.result); }
 					return this.result;
 				} else {
@@ -211,7 +213,7 @@ export class Task<T> implements PromiseLike<T> {
 			.then(() => this._task(this._cancellationToken))
 			.then((result) => {
 				this._result = result;
-				this._status = TaskStatus.CompletedSuccessfully;
+				this._status = TaskStatus.Successed;
 			})
 			.catch((err) => {
 				if (this._cancellationToken.isCancellationRequested || err instanceof CancelledError) {
@@ -284,7 +286,7 @@ export class Task<T> implements PromiseLike<T> {
 		let errors: Array<Error> = [];
 		for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
 			const task = tasks[taskIndex];
-			if (task._status === TaskStatus.CompletedSuccessfully) {
+			if (task._status === TaskStatus.Successed) {
 				continue;
 			}
 			if (task._status === TaskStatus.Faulted) {

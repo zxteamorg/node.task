@@ -822,9 +822,9 @@ describe("Generic tests", () => {
 
 		await Task.waitAll(tasks);
 
-		assert.isTrue(task0.isCompletedSuccessfully);
-		assert.isTrue(task1.isCompletedSuccessfully);
-		assert.isTrue(task2.isCompletedSuccessfully);
+		assert.isTrue(task0.isSuccessed);
+		assert.isTrue(task1.isSuccessed);
+		assert.isTrue(task2.isSuccessed);
 	});
 	it("Should be able to pass array of tasks to waitAll() via destruction", async () => {
 		const task0 = new Task<string>(() => "forty two");
@@ -835,9 +835,9 @@ describe("Generic tests", () => {
 
 		await Task.waitAll(...tasks);
 
-		assert.isTrue(task0.isCompletedSuccessfully);
-		assert.isTrue(task1.isCompletedSuccessfully);
-		assert.isTrue(task2.isCompletedSuccessfully);
+		assert.isTrue(task0.isSuccessed);
+		assert.isTrue(task1.isSuccessed);
+		assert.isTrue(task2.isSuccessed);
 	});
 	it("Should auto relase callbacks on cancel()", async () => {
 		const cts = Task.createCancellationTokenSource();
@@ -853,7 +853,7 @@ describe("Generic tests", () => {
 		token.removeCancelListener(cb); // No error
 		assert.throw(() => token.throwIfCancellationRequested(), CancelledError);
 	});
-	it.only("Propery error and result should throw error both in case cancel()", async function () {
+	it("Propery error and result should throw error both in case cancel()", async function () {
 		const cts = Task.createCancellationTokenSource();
 
 		const task = new Task(async (token) => {
@@ -867,7 +867,7 @@ describe("Generic tests", () => {
 
 		assert.isFalse(task.isCancelled);
 		assert.isFalse(task.isCompleted);
-		assert.isFalse(task.isCompletedSuccessfully);
+		assert.isFalse(task.isSuccessed);
 		assert.isFalse(task.isFaulted);
 
 		cts.cancel();
@@ -876,7 +876,7 @@ describe("Generic tests", () => {
 
 		assert.isTrue(task.isCancelled);
 		assert.isTrue(task.isCompleted);
-		assert.isFalse(task.isCompletedSuccessfully);
+		assert.isFalse(task.isSuccessed);
 		assert.isFalse(task.isFaulted);
 
 		assert.throw(() => task.result, Error);

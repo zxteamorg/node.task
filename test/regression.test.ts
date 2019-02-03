@@ -1,6 +1,7 @@
 import { assert } from "chai";
+import { CancellationTokenLike } from "@zxteam/contract";
 
-import { Task, AggregateError, CancelledError, WrapError, CancellationTokenLike } from "../src/index";
+import { Task } from "../src/index";
 
 describe("Regression", function () {
 	describe("0.0.1", function () {
