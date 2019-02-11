@@ -1,6 +1,6 @@
 {
 	"name": "ptask.js",
-	"version": "0.0.9",
+	"version": "2.0.0",
 	"description": "Promise as Task",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
@@ -17,7 +17,7 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"@zxteam/contract": "^1.0.6"
+		"@zxteam/contract": "^2.0.0"
 	},
 	"devDependencies": {
 		"@zxnode/build": "0.0.30"
