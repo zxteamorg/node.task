@@ -234,26 +234,37 @@ export class Task<T> implements TaskLike<T> {
 		return new CancellationTokenSourceImpl();
 	}
 
-	public static sleep(ms: number, cancellationToken?: CancellationTokenLike): Task<void> {
+	public static sleep(cancellationToken: CancellationTokenLike): Task<void>;
+	public static sleep(ms: number, cancellationToken?: CancellationTokenLike): Task<void>;
+	public static sleep(msOrCancellationToken: number | CancellationTokenLike, cancellationToken?: CancellationTokenLike): Task<void> {
+		const [ms, ct] = typeof msOrCancellationToken === "number" ?
+			[msOrCancellationToken, cancellationToken] : [undefined, msOrCancellationToken];
 		function worker(token: CancellationTokenLike) {
 			return new Promise<void>((resolve, reject) => {
 				if (token.isCancellationRequested) {
 					return reject(new CancelledError());
 				}
-				const timeout = setTimeout(function () {
-					token.removeCancelListener(cancelCallback);
-					return resolve();
-				}, ms);
+
+				let timeout: number | undefined = undefined;
+				if (ms !== undefined) {
+					timeout = setTimeout(function () {
+						token.removeCancelListener(cancelCallback);
+						return resolve();
+					}, ms);
+				}
+
 				function cancelCallback() {
 					token.removeCancelListener(cancelCallback);
-					clearTimeout(timeout);
+					if (timeout !== undefined) {
+						clearTimeout(timeout);
+					}
 					return reject(new CancelledError());
 				}
 				token.addCancelListener(cancelCallback);
 			});
 		}
 
-		return new Task(worker, cancellationToken);
+		return new Task(worker, ct).start();
 	}
 
 	// tslint:disable:max-line-length

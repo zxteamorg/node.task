@@ -759,7 +759,7 @@ describe("Generic tests", () => {
 	});
 	it("Should cancel sleep() after start", async () => {
 		const cancellationTokenSource = Task.createCancellationTokenSource();
-		const sleepTask = Task.sleep(1000, cancellationTokenSource.token).start();
+		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
 		await Task.sleep(25);
 
 		cancellationTokenSource.cancel();
