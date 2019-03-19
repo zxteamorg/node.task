@@ -1,5 +1,5 @@
 import { assert } from "chai";
-import { CancellationTokenLike } from "@zxteam/contract";
+import { CancellationToken as CancellationTokenLike } from "@zxteam/contract";
 
 import { Task } from "../src/index";
 
@@ -14,7 +14,7 @@ describe("Regression", function () {
 			const defer: any = {};
 			defer.promise = new Promise(resolve => { defer.resolve = resolve; });
 
-			const task = new Task(
+			const task = Task.create(
 				async (ct: CancellationTokenLike): Promise<void> => {
 
 					const cb1 = () => {
