@@ -895,4 +895,80 @@ describe("Generic tests", () => {
 		assert.throw(() => task.result, Error);
 		assert.throw(() => task.error, Error);
 	});
+	it("then shoud return instance of Task", async () => {
+		let taskStarted = false;
+		let expectedRes: any = null;
+		const testTask = Task.create(() => {
+			taskStarted = true;
+			return 42;
+		});
+		const thenTask = testTask.then((res) => {
+			expectedRes = res;
+		});
+		await new Promise(r => setTimeout(r, 25));
+		assert.isTrue(taskStarted, "The task should start when catch() called");
+		assert.isTrue(testTask.isSuccessed, "The task should be successed");
+		assert.instanceOf(thenTask, Task, "The type of an instance of a catch() result should be Task");
+		assert.isTrue(thenTask.isSuccessed, "The task should be successed");
+		assert.equal(expectedRes, 42, "then should pass result of previous task into callback");
+	});
+	it("catch shoud return instance of Task", async () => {
+		let taskStarted = false;
+		const testTask = Task.create(() => {
+			taskStarted = true;
+			return 42;
+		});
+		const catchTask = testTask.catch((err) => {
+			//nothing
+		});
+		await new Promise(r => setTimeout(r, 25));
+		assert.isTrue(taskStarted, "The task should start when catch() called");
+		assert.instanceOf(catchTask, Task, "The type of an instance of a catch() result should be Task");
+	});
+	it("catch shoud produce callback with argument of the Error type #1", async () => {
+		let taskStarted = false;
+		let expectedErr: any = null;
+		const testTask = Task.create(() => {
+			taskStarted = true;
+			throw "Non error throw";
+		});
+		testTask.catch((err) => { expectedErr = err; });
+		await new Promise(r => setTimeout(r, 25));
+
+		assert.isTrue(taskStarted, "The task should start when catch() called");
+		assert.isTrue(testTask.isFaulted, "The task should be faulted");
+		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
+		assert.equal((expectedErr as WrapError).message, "Non error throw");
+	});
+	it("catch shoud produce callback with argument of the Error type #2", async () => {
+		let taskStarted = false;
+		let expectedErr: any = null;
+		const testTask = Task.create(() => {
+			taskStarted = true;
+			throw 42;
+		});
+		testTask.catch((err) => { expectedErr = err; });
+		await new Promise(r => setTimeout(r, 25));
+
+		assert.isTrue(taskStarted, "The task should start when catch() called");
+		assert.isTrue(testTask.isFaulted, "The task should be faulted");
+		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
+		assert.equal((expectedErr as WrapError).message, "42");
+	});
+	it("catch shoud produce callback with argument of the Error type #3", async () => {
+		const errorSubj = { fake: 0 };
+		let taskStarted = false;
+		let expectedErr: any = null;
+		const testTask = Task.create(() => {
+			taskStarted = true;
+			throw errorSubj;
+		});
+		testTask.catch((err) => { expectedErr = err; });
+		await new Promise(r => setTimeout(r, 25));
+
+		assert.isTrue(taskStarted, "The task should start when catch() called");
+		assert.isTrue(testTask.isFaulted, "The task should be faulted");
+		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
+		assert.equal((expectedErr as WrapError).message, errorSubj.toString());
+	});
 });

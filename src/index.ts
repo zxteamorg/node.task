@@ -40,19 +40,15 @@ class CancellationTokenSourceImpl implements CancellationTokenSource {
 		this._isCancellationRequested = true;
 		const errors: Array<Error> = [];
 		if (this._cancelListeners.length > 0) {
-			const cancelListenersCopy = this._cancelListeners.slice();
-			// We copy original array due callback can modify original array via removeCancelListener()
-			cancelListenersCopy.forEach(cancelListener => {
+			// Release callback. We do not need its anymore
+			const cancelListeners = this._cancelListeners.splice(0);
+			cancelListeners.forEach(cancelListener => {
 				try {
 					cancelListener();
 				} catch (e) {
 					errors.push(WrapError.wrapIfNeeded(e));
 				}
 			});
-			if (this._cancelListeners.length > 0) {
-				// Release callback. We do not need its anymore
-				this._cancelListeners.splice(0);
-			}
 		}
 		if (errors.length > 0) {
 			throw new AggregateError(errors);
@@ -139,25 +135,8 @@ const flagSymbol: Symbol = Symbol();
 export type PromiseExecutor<T> = (resolve: (value?: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void;
 
 export class Task<T> extends Promise<T> implements contract.Task<T> {
-	// private readonly _task: (cancellationToken: contract.CancellationToken) => T | Promise<T>;
-	// private readonly _cancellationToken: contract.CancellationToken;
-	// private _taskWorker: Promise<void> | null;
-	// private _result: T;
-	// private _error: Error;
 	private readonly _underlayingRootEntry?: TaskRootEntry<T>;
 	private readonly _underlayingEntry: TaskEntry<T>;
-
-	// public constructor(
-	// 	task: (cancellationToken: contract.CancellationToken) => T | Promise<T>,
-	// 	cancellationToken?: contract.CancellationToken
-	// ) {
-	// 	this._task = task;
-	// 	this._cancellationToken = cancellationToken || DummyCancellationTokenInstance;
-
-	// 	this._taskWorker = null;
-	// 	this._status = TaskStatus.Created;
-	// }
-
 
 	public constructor(executor: PromiseExecutor<T>, flag?: Symbol, rootEntry?: TaskRootEntry<T>) {
 		super(executor);
@@ -197,8 +176,7 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		return this._status === TaskStatus.Canceled;
 	}
 
-	// tslint:disable-next-line: max-line-length
-	public then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): Promise<TResult1 | TResult2> {
+	public then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): Task<TResult1 | TResult2> {
 		const underlayingRootEntry = this._underlayingRootEntry;
 
 		if (underlayingRootEntry !== undefined) {
@@ -254,7 +232,11 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 
 		const subTask: any = super.then(onfulfilled, onrejected);
 		subTask._underlayingEntry = this._underlayingEntry;
-		return subTask as Task<TResult1>;
+		return subTask as Task<TResult1 | TResult2>;
+	}
+
+	public catch<TResult = never>(onrejected?: ((reason: Error) => TResult | PromiseLike<TResult>) | undefined | null): Task<T | TResult> {
+		return super.catch(onrejected) as Task<T | TResult>;
 	}
 
 	public start(): this {
@@ -291,8 +273,7 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		return this._underlayingEntry.status;
 	}
 
-	// tslint:disable-next-line: max-line-length
-	public static create<T>(task: (cancellationToken: contract.CancellationToken) => T | Promise<T>, cancellationToken?: contract.CancellationToken): Task<T> {
+	public static create<T = void>(task: (cancellationToken: contract.CancellationToken) => T | Promise<T>, cancellationToken?: contract.CancellationToken): Task<T> {
 		if (cancellationToken === undefined) {
 			cancellationToken = DummyCancellationTokenInstance;
 		}
@@ -310,8 +291,21 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		return taskInstance;
 	}
 
-	// tslint:disable-next-line: max-line-length
-	public static run<T>(task: (cancellationToken: contract.CancellationToken) => T | Promise<T>, cancellationToken?: contract.CancellationToken): Task<T> {
+	public static reject<T = never>(reason: Error): Task<T> {
+		return Task.run(() => Promise.reject(reason));
+	}
+
+	public static resolve(): Task<void>;
+	public static resolve<T = void>(value: T | PromiseLike<T>): Task<T>;
+	public static resolve<T>(value?: T | PromiseLike<T>): Task<T> | Task<void> {
+		if (value !== undefined) {
+			return Task.run(() => Promise.resolve(value));
+		} else {
+			return Task.run(() => Promise.resolve());
+		}
+	}
+
+	public static run<T = void>(task: (cancellationToken: contract.CancellationToken) => T | Promise<T>, cancellationToken?: contract.CancellationToken): Task<T> {
 		return Task.create(task, cancellationToken).start();
 	}
 
@@ -321,7 +315,6 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 
 	public static sleep(cancellationToken: contract.CancellationToken): Task<void>;
 	public static sleep(ms: number, cancellationToken?: contract.CancellationToken): Task<void>;
-	// tslint:disable-next-line: max-line-length
 	public static sleep(msOrCancellationToken: number | contract.CancellationToken, cancellationToken?: contract.CancellationToken): Task<void> {
 		const [ms, ct] = typeof msOrCancellationToken === "number" ?
 			[msOrCancellationToken, cancellationToken] : [undefined, msOrCancellationToken];
@@ -353,21 +346,19 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		return Task.run(worker, ct);
 	}
 
-	// tslint:disable:max-line-length
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>, task8: Task<T8>, task9: Task<T9>): contract.Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>, task8: Task<T8>): contract.Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>): contract.Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>): contract.Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4, T5>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>): contract.Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>): contract.Task<void>;
-	// tslint:enable:max-line-length
-	public static waitAll<T0, T1, T2, T3>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>): contract.Task<void>;
-	public static waitAll<T0, T1, T2>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>): contract.Task<void>;
-	public static waitAll<T0, T1>(task0: Task<T0>, task1: Task<T1>): contract.Task<void>;
-	public static waitAll<T>(task0: Task<T>): contract.Task<void>;
-	public static waitAll(tasks: Task<any>[]): contract.Task<void>;
-	public static waitAll(...tasks: Task<any>[]): contract.Task<void>;
-	public static waitAll(...tasks: any): contract.Task<void> {
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>, task6: contract.Task<T6>, task7: contract.Task<T7>, task8: contract.Task<T8>, task9: contract.Task<T9>): Task<void>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>, task6: contract.Task<T6>, task7: contract.Task<T7>, task8: contract.Task<T8>): Task<void>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>, task6: Task<T6>, task7: contract.Task<T7>): Task<void>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>, task6: contract.Task<T6>): Task<void>;
+	public static waitAll<T0, T1, T2, T3, T4, T5>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>): Task<void>;
+	public static waitAll<T0, T1, T2, T3, T4>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>): Task<void>;
+	public static waitAll<T0, T1, T2, T3>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>): Task<void>;
+	public static waitAll<T0, T1, T2>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>): Task<void>;
+	public static waitAll<T0, T1>(task0: contract.Task<T0>, task1: contract.Task<T1>): Task<void>;
+	public static waitAll<T>(task0: contract.Task<T>): Task<void>;
+	public static waitAll(tasks: contract.Task<any>[]): Task<void>;
+	public static waitAll(...tasks: contract.Task<any>[]): Task<void>;
+	public static waitAll(...tasks: any): Task<void> {
 		if (!tasks) { throw new Error("Wrong arguments"); }
 		return Task.create<void>(async () => {
 			if (tasks.length === 0) { return Promise.resolve(); }
