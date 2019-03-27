@@ -121,13 +121,13 @@ interface TaskRootEntry<T> {
 	readonly resolve: (value: T) => void;
 	readonly reject: (reason: Error) => void;
 	fulfilled: boolean;
-	taskWorker: Promise<void> | null;
 }
 interface TaskEntry<T> {
 	readonly cancellationToken: contract.CancellationToken;
 	result?: T;
 	error?: Error;
 	status: TaskStatus;
+	taskWorker: Promise<void> | null;
 }
 
 const flagSymbol: Symbol = Symbol();
@@ -181,7 +181,8 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 
 		if (underlayingRootEntry !== undefined) {
 			if (this._status === TaskStatus.Created) { this.start(); }
-			if (underlayingRootEntry.taskWorker === null) { throw new AssertError(); }
+			const { taskWorker } = this._underlayingEntry;
+			if (taskWorker === null) { throw new AssertError(); }
 
 			if (this._status === TaskStatus.Successed) {
 				if (!underlayingRootEntry.fulfilled) {
@@ -194,7 +195,6 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 					underlayingRootEntry.fulfilled = true;
 				}
 			} else {
-				const { taskWorker } = underlayingRootEntry;
 				// taskWorker never fails
 				taskWorker.then(() => {
 					if (this._status === TaskStatus.Successed) {
@@ -243,7 +243,7 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		if (this._status !== TaskStatus.Created) {
 			throw new Error("Invalid operation at current state. The task already started");
 		}
-		if ((this._underlayingRootEntry as TaskRootEntry<T>).taskWorker !== null) { throw new AssertError("taskWorker !== null"); }
+		if (this._underlayingEntry.taskWorker !== null) { throw new AssertError("taskWorker !== null"); }
 
 		const taskWorker = Promise.resolve()
 			.then(() => {
@@ -263,10 +263,15 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 				this._underlayingEntry.error = WrapError.wrapIfNeeded(err);
 			});
 
-		(this._underlayingRootEntry as TaskRootEntry<T>).taskWorker = taskWorker;
+		this._underlayingEntry.taskWorker = taskWorker;
 		this._underlayingEntry.status = TaskStatus.Running;
 
 		return this;
+	}
+
+	public wait(): Promise<void> {
+		const taskWorker = this._underlayingEntry.taskWorker;
+		return taskWorker !== null ? taskWorker : Promise.resolve();
 	}
 
 	protected get _status(): TaskStatus {
@@ -279,7 +284,7 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		}
 
 		const rootEntry: any = { taskWorker: null, task };
-		const entry: TaskEntry<T> = { cancellationToken, status: TaskStatus.Created };
+		const entry: TaskEntry<T> = { cancellationToken, status: TaskStatus.Created, taskWorker: null };
 
 		const executor: PromiseExecutor<T> = (resolve, reject) => {
 			rootEntry.resolve = resolve;
@@ -369,8 +374,8 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 			}
 			await Promise.all(tasks.map((task: any) => {
 				if (task._status === TaskStatus.Created) { task.start(); }
-				if (task._underlayingRootEntry.taskWorker === null) { throw new AssertError("Task worker not exist after start"); }
-				return task._underlayingRootEntry.taskWorker;
+				if (task._underlayingEntry.taskWorker === null) { throw new AssertError("Task worker not exist after start"); }
+				return task._underlayingEntry.taskWorker;
 			})); // Should never failed
 			let errors: Array<Error> = [];
 			for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {

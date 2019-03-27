@@ -1,5 +1,7 @@
 import { assert } from "chai";
 
+import { Task as TaskLike } from "@zxteam/contract";
+
 import { Task, AggregateError, CancelledError, WrapError } from "../src/index";
 
 describe("Generic tests", () => {
@@ -895,7 +897,7 @@ describe("Generic tests", () => {
 		assert.throw(() => task.result, Error);
 		assert.throw(() => task.error, Error);
 	});
-	it("then shoud return instance of Task", async () => {
+	it("then should return instance of Task", async () => {
 		let taskStarted = false;
 		let expectedRes: any = null;
 		const testTask = Task.create(() => {
@@ -912,7 +914,7 @@ describe("Generic tests", () => {
 		assert.isTrue(thenTask.isSuccessed, "The task should be successed");
 		assert.equal(expectedRes, 42, "then should pass result of previous task into callback");
 	});
-	it("catch shoud return instance of Task", async () => {
+	it("catch should return instance of Task", async () => {
 		let taskStarted = false;
 		const testTask = Task.create(() => {
 			taskStarted = true;
@@ -925,7 +927,7 @@ describe("Generic tests", () => {
 		assert.isTrue(taskStarted, "The task should start when catch() called");
 		assert.instanceOf(catchTask, Task, "The type of an instance of a catch() result should be Task");
 	});
-	it("catch shoud produce callback with argument of the Error type #1", async () => {
+	it("catch should produce callback with argument of the Error type #1", async () => {
 		let taskStarted = false;
 		let expectedErr: any = null;
 		const testTask = Task.create(() => {
@@ -940,7 +942,7 @@ describe("Generic tests", () => {
 		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
 		assert.equal((expectedErr as WrapError).message, "Non error throw");
 	});
-	it("catch shoud produce callback with argument of the Error type #2", async () => {
+	it("catch should produce callback with argument of the Error type #2", async () => {
 		let taskStarted = false;
 		let expectedErr: any = null;
 		const testTask = Task.create(() => {
@@ -955,7 +957,7 @@ describe("Generic tests", () => {
 		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
 		assert.equal((expectedErr as WrapError).message, "42");
 	});
-	it("catch shoud produce callback with argument of the Error type #3", async () => {
+	it("catch should produce callback with argument of the Error type #3", async () => {
 		const errorSubj = { fake: 0 };
 		let taskStarted = false;
 		let expectedErr: any = null;
@@ -970,5 +972,50 @@ describe("Generic tests", () => {
 		assert.isTrue(testTask.isFaulted, "The task should be faulted");
 		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
 		assert.equal((expectedErr as WrapError).message, errorSubj.toString());
+	});
+	it("Positive Task should provide wait promise", async () => {
+		const task: TaskLike = Task.run(() => new Promise(r => setTimeout(r, 10)));
+
+		assert.isFalse(task.isCancelled);
+		assert.isFalse(task.isCompleted);
+		assert.isFalse(task.isFaulted);
+		assert.isFalse(task.isSuccessed);
+
+		await task.wait();
+
+		assert.isFalse(task.isCancelled);
+		assert.isTrue(task.isCompleted);
+		assert.isFalse(task.isFaulted);
+		assert.isTrue(task.isSuccessed);
+	});
+	it("Fail Task should provide wait promise", async () => {
+		const task: TaskLike = Task.run(() => new Promise((r, j) => setTimeout(j, 10)));
+
+		assert.isFalse(task.isCancelled);
+		assert.isFalse(task.isCompleted);
+		assert.isFalse(task.isFaulted);
+		assert.isFalse(task.isSuccessed);
+
+		await task.wait();
+
+		assert.isFalse(task.isCancelled);
+		assert.isTrue(task.isCompleted);
+		assert.isTrue(task.isFaulted);
+		assert.isFalse(task.isSuccessed);
+	});
+	it("Cancel Task should provide wait promise", async () => {
+		const task: TaskLike = Task.run(() => { throw new CancelledError("Test cancel"); });
+
+		assert.isFalse(task.isCancelled);
+		assert.isFalse(task.isCompleted);
+		assert.isFalse(task.isFaulted);
+		assert.isFalse(task.isSuccessed);
+
+		await task.wait();
+
+		assert.isTrue(task.isCancelled);
+		assert.isTrue(task.isCompleted);
+		assert.isFalse(task.isFaulted);
+		assert.isFalse(task.isSuccessed);
 	});
 });
