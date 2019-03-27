@@ -1,6 +1,6 @@
 {
 	"name": "ptask.js",
-	"version": "3.0.2",
+	"version": "3.0.3",
 	"description": "Promise as Task",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
@@ -11,8 +11,8 @@
 	},
 	"contributors": [
 		{
-			"name": "Serg Zgama",
-			"email": "serg.zgama@zxteam.org"
+			"name": "Serhii Zghama",
+			"email": "serhii.zghama@zxteam.org"
 		}
 	],
 	"license": "MIT",
@@ -21,6 +21,9 @@
 	},
 	"devDependencies": {
 		"@zxnode/build": "^0.0.32"
+	},
+	"engines": {
+		"node": ">=11"
 	},
 	"keywords": [],
 	"repository": {

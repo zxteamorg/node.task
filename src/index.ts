@@ -8,12 +8,15 @@ const enum TaskStatus {
 	Faulted = 7
 }
 
-class DummyCancellationToken implements contract.CancellationToken {
+class DummyCancellationTokenImpl implements contract.CancellationToken {
 	public get isCancellationRequested(): boolean { return false; }
 	public addCancelListener(cb: Function): void {/* Dummy */ }
 	public removeCancelListener(cb: Function): void {/* Dummy */ }
 	public throwIfCancellationRequested(): void {/* Dummy */ }
 }
+
+export const DummyCancellationToken = new DummyCancellationTokenImpl();
+
 class CancellationTokenSourceImpl implements CancellationTokenSource {
 	public readonly token: contract.CancellationToken;
 	private readonly _cancelListeners: Array<Function> = [];
@@ -69,12 +72,12 @@ class CancellationTokenSourceImpl implements CancellationTokenSource {
 	}
 }
 
-const DummyCancellationTokenInstance = new DummyCancellationToken();
-
 class AssertError extends Error {
+	public readonly name: "AssertError";
 }
 
 export class WrapError extends Error {
+	public readonly name: "WrapError";
 	public readonly wrap: any;
 	public constructor(wrap: any) {
 		super(wrap && wrap.toString());
@@ -90,7 +93,6 @@ export class WrapError extends Error {
 
 	}
 }
-
 
 export class AggregateError extends Error implements contract.AggregateError {
 	public readonly name = "AggregateError";
@@ -108,7 +110,6 @@ export class CancelledError extends Error implements contract.CancelledError {
 export class InvalidOperationError extends Error implements contract.InvalidOperationError {
 	public readonly name = "InvalidOperationError";
 }
-
 export interface CancellationTokenSource {
 	readonly isCancellationRequested: boolean;
 	readonly token: contract.CancellationToken;
@@ -121,7 +122,6 @@ interface TaskRootEntry<T> {
 	readonly reject: (reason: Error) => void;
 	fulfilled: boolean;
 	taskWorker: Promise<void> | null;
-
 }
 interface TaskEntry<T> {
 	readonly cancellationToken: contract.CancellationToken;
@@ -275,7 +275,7 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 
 	public static create<T = void>(task: (cancellationToken: contract.CancellationToken) => T | Promise<T>, cancellationToken?: contract.CancellationToken): Task<T> {
 		if (cancellationToken === undefined) {
-			cancellationToken = DummyCancellationTokenInstance;
+			cancellationToken = DummyCancellationToken;
 		}
 
 		const rootEntry: any = { taskWorker: null, task };
