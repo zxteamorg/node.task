@@ -15,7 +15,7 @@ class DummyCancellationTokenImpl implements contract.CancellationToken {
 	public throwIfCancellationRequested(): void {/* Dummy */ }
 }
 
-export const DummyCancellationToken = new DummyCancellationTokenImpl();
+export const DUMMY_CANCELLATION_TOKEN = new DummyCancellationTokenImpl();
 
 class CancellationTokenSourceImpl implements CancellationTokenSource {
 	public readonly token: contract.CancellationToken;
@@ -275,7 +275,7 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 
 	public static create<T = void>(task: (cancellationToken: contract.CancellationToken) => T | Promise<T>, cancellationToken?: contract.CancellationToken): Task<T> {
 		if (cancellationToken === undefined) {
-			cancellationToken = DummyCancellationToken;
+			cancellationToken = DUMMY_CANCELLATION_TOKEN;
 		}
 
 		const rootEntry: any = { taskWorker: null, task };
