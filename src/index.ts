@@ -73,11 +73,11 @@ class CancellationTokenSourceImpl implements CancellationTokenSource {
 }
 
 class AssertError extends Error {
-	public readonly name: "AssertError";
+	public readonly name = "AssertError";
 }
 
 export class WrapError extends Error {
-	public readonly name: "WrapError";
+	public readonly name = "WrapError";
 	public readonly wrap: any;
 	public constructor(wrap: any) {
 		super(wrap && wrap.toString());
