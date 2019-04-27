@@ -1,5 +1,5 @@
 {
-	"name": "@zxtam/task",
+	"name": "@zxteam/task",
 	"version": "3.2.4",
 	"description": "Task implementation of ZXTeam's contract",
 	"main": "./src/index.js",
