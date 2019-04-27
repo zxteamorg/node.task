@@ -318,7 +318,35 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		return new CancellationTokenSourceImpl();
 	}
 
-	public static sleep(cancellationToken: contract.CancellationToken): Task<void>;
+	/**
+	 * Create an instance on the CancellationTokenSource with auto-cancel timeout
+	 * NOTE: Use cancel() to destroy internal timer
+	 * @param timeout Timeout in milliseconds for auto-cancel
+	 */
+	public static createTimeoutCancellationTokenSource(timeout: number): CancellationTokenSource {
+		const cts = Task.createCancellationTokenSource();
+
+		let timeoutHandler: number | null = setTimeout(() => {
+			timeoutHandler = null;
+			cts.cancel();
+		}, timeout);
+
+		const ctsWithTimeout: CancellationTokenSource = {
+			get isCancellationRequested() { return cts.isCancellationRequested; },
+			get token() { return cts.token; },
+			cancel(): void {
+				if (timeoutHandler !== null) {
+					clearTimeout(timeoutHandler);
+					timeoutHandler = null;
+				}
+				cts.cancel();
+			}
+		};
+
+		return ctsWithTimeout;
+	}
+
+	public static sleep(cancellationToken: contract.CancellationToken): Task<never>;
 	public static sleep(ms: number, cancellationToken?: contract.CancellationToken): Task<void>;
 	public static sleep(msOrCancellationToken: number | contract.CancellationToken, cancellationToken?: contract.CancellationToken): Task<void> {
 		const [ms, ct] = typeof msOrCancellationToken === "number" ?

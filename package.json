@@ -1,7 +1,7 @@
 {
-	"name": "ptask.js",
-	"version": "3.2.1",
-	"description": "Promise as Task",
+	"name": "@zxtam/task",
+	"version": "3.2.4",
+	"description": "Task implementation of ZXTeam's contract",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
 	"author": {
@@ -17,10 +17,10 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"@zxteam/contract": "^3.2.1"
+		"@zxteam/contract": "^3.2.4"
 	},
 	"devDependencies": {
-		"@zxnode/build": "^0.0.32"
+		"@zxnode/build": "^0.0.33"
 	},
 	"engines": {
 		"node": ">=11"
@@ -28,12 +28,12 @@
 	"keywords": [],
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/zxteamorg/ptask.js.git"
+		"url": "git+https://dev.zxteam.net/pub/node/task.git"
 	},
 	"bugs": {
-		"url": "https://github.com/zxteamorg/ptask.js/issues"
+		"url": "https://dev.zxteam.net/pub/node/task/issues"
 	},
-	"homepage": "https://github.com/zxteamorg/ptask.js#readme",
+	"homepage": "https://dev.zxteam.net/pub/node/task#readme",
 	"scripts": {
 		"build": "zxbuild clean dist",
 		"test": "nyc --exclude submodules --exclude test --reporter=lcov --reporter=text --reporter=text-summary mocha \"test/**/*.test.js\" --recursive"
