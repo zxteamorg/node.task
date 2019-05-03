@@ -20,6 +20,7 @@
 		"@zxteam/contract": "^4.0.0"
 	},
 	"devDependencies": {
+		"@types/node": "^11.13.9",
 		"@zxnode/build": "^0.0.33"
 	},
 	"engines": {
