@@ -1,7 +1,6 @@
 import { assert } from "chai";
 import { CancellationToken as CancellationTokenLike } from "@zxteam/contract";
-
-import { Task } from "../src/index";
+import { Task, AggregateError } from "../src/index";
 
 describe("Regression", function () {
 	describe("0.0.1", function () {
@@ -49,5 +48,90 @@ describe("Regression", function () {
 			assert.isTrue(cancel1);
 			assert.isTrue(cancel2);
 		});
+	});
+
+	describe("3.2.4", function () {
+		it("Should not produce unhandledRejection", async () => {
+			class TestError extends Error { }
+
+			let unhandledRejectionCount = 0;
+			function unhandledRejectionHandler() {
+				++unhandledRejectionCount;
+			}
+			process.on("unhandledRejection", unhandledRejectionHandler);
+			try {
+				const taskRoot = Task.run(() => { throw new TestError("Fake Error"); });
+
+				let fails = 0;
+
+				taskRoot.promise
+					.then(() => {
+						// NOPE: this nope is reason for unhandledRejection in 3.2.4
+					})
+					.catch(() => { ++fails; });
+
+				let expectedError;
+				try {
+					await Task.waitAll(taskRoot);
+				} catch (e) {
+					expectedError = e;
+				}
+
+				await Task.sleep(250);
+
+				assert.isTrue(taskRoot.isCompleted);
+				assert.isFalse(taskRoot.isCancelled);
+				assert.isTrue(taskRoot.isFaulted);
+				assert.isDefined(expectedError);
+				assert.instanceOf(expectedError, AggregateError);
+				assert.instanceOf((expectedError as AggregateError).innerError, TestError);
+				assert.equal((expectedError as AggregateError).innerError.message, "Fake Error");
+
+				assert.equal(fails, 1);
+				assert.equal(unhandledRejectionCount, 0, "Should no unhandledRejection(s)");
+			} finally {
+				process.removeListener("unhandledRejection", unhandledRejectionHandler);
+			}
+		});
+
+		// it("Should not produce unhandledRejection", async () => {
+		// 	class TestError extends Error { }
+
+		// 	let unhandledRejectionCount = 0;
+		// 	function unhandledRejectionHandler() {
+		// 		++unhandledRejectionCount;
+		// 	}
+		// 	process.on("unhandledRejection", unhandledRejectionHandler);
+		// 	try {
+		// 		//const task1 = Task.create<number>(() => Promise.reject(new TestError("Fake Error")));
+		// 		const task = Task
+		// 			.create(() => { throw new TestError("Fake Error"); })
+		// 			.promise.catch(() => {
+		// 				// NOPE
+		// 				// this nope is reason for unhandledRejection in 3.2.4
+		// 			});
+
+		// 		let expectedError;
+		// 		try {
+		// 			await Task.waitAll(task);
+		// 		} catch (e) {
+		// 			expectedError = e;
+		// 		}
+
+		// 		await Task.sleep(25);
+
+		// 		assert.isTrue(task.isCompleted);
+		// 		assert.isFalse(task.isCancelled);
+		// 		assert.isTrue(task.isFaulted);
+		// 		assert.isDefined(expectedError);
+		// 		assert.instanceOf(expectedError, AggregateError);
+		// 		assert.instanceOf((expectedError as AggregateError).innerError, TestError);
+		// 		assert.equal((expectedError as AggregateError).innerError.message, "Fake Error");
+
+		// 		assert.equal(unhandledRejectionCount, 0, "Should no unhandledRejection(s)");
+		// 	} finally {
+		// 		process.removeListener("unhandledRejection", unhandledRejectionHandler);
+		// 	}
+		// });
 	});
 });

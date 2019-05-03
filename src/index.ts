@@ -1,4 +1,5 @@
-import * as contract from "@zxteam/contract";
+import * as zxteam from "@zxteam/contract";
+
 
 const enum TaskStatus {
 	Created = 0,
@@ -8,7 +9,7 @@ const enum TaskStatus {
 	Faulted = 7
 }
 
-class DummyCancellationTokenImpl implements contract.CancellationToken {
+class DummyCancellationTokenImpl implements zxteam.CancellationToken {
 	public get isCancellationRequested(): boolean { return false; }
 	public addCancelListener(cb: Function): void {/* Dummy */ }
 	public removeCancelListener(cb: Function): void {/* Dummy */ }
@@ -18,7 +19,7 @@ class DummyCancellationTokenImpl implements contract.CancellationToken {
 export const DUMMY_CANCELLATION_TOKEN = new DummyCancellationTokenImpl();
 
 class CancellationTokenSourceImpl implements CancellationTokenSource {
-	public readonly token: contract.CancellationToken;
+	public readonly token: zxteam.CancellationToken;
 	private readonly _cancelListeners: Array<Function> = [];
 	private _isCancellationRequested: boolean;
 
@@ -72,6 +73,26 @@ class CancellationTokenSourceImpl implements CancellationTokenSource {
 	}
 }
 
+class TimeoutCancellationTokenSourceImpl extends CancellationTokenSourceImpl {
+	private _timeoutHandler: any;
+
+	public constructor(timeout: number) {
+		super();
+
+		this._timeoutHandler = setTimeout(() => {
+			if (this._timeoutHandler !== undefined) { delete this._timeoutHandler; }
+			super.cancel();
+		}, timeout);
+	}
+	public cancel() {
+		if (this._timeoutHandler !== undefined) {
+			clearTimeout(this._timeoutHandler);
+			delete this._timeoutHandler;
+		}
+		super.cancel();
+	}
+}
+
 class AssertError extends Error {
 	public readonly name = "AssertError";
 }
@@ -94,7 +115,7 @@ export class WrapError extends Error {
 	}
 }
 
-export class AggregateError extends Error implements contract.AggregateError {
+export class AggregateError extends Error implements zxteam.AggregateError {
 	public readonly name = "AggregateError";
 	public readonly innerError: Error;
 	public readonly innerErrors: Array<Error>;
@@ -104,63 +125,52 @@ export class AggregateError extends Error implements contract.AggregateError {
 		this.innerErrors = innerErrors;
 	}
 }
-export class CancelledError extends Error implements contract.CancelledError {
+export class CancelledError extends Error implements zxteam.CancelledError {
 	public readonly name = "CancelledError";
 }
-export class InvalidOperationError extends Error implements contract.InvalidOperationError {
+export class InvalidOperationError extends Error implements zxteam.InvalidOperationError {
 	public readonly name = "InvalidOperationError";
 }
 export interface CancellationTokenSource {
 	readonly isCancellationRequested: boolean;
-	readonly token: contract.CancellationToken;
+	readonly token: zxteam.CancellationToken;
 	cancel(): void;
 }
 
-interface TaskRootEntry<T> {
-	readonly task: (cancellationToken: contract.CancellationToken) => T | Promise<T>;
-	readonly resolve: (value: T) => void;
-	readonly reject: (reason: Error) => void;
-	fulfilled: boolean;
-}
-interface TaskEntry<T> {
-	readonly cancellationToken: contract.CancellationToken;
-	result?: T;
-	error?: Error;
-	status: TaskStatus;
-	taskWorker: Promise<void> | null;
-}
+export class Task<T> implements zxteam.Task<T> {
+	private readonly _taskFn: ((cancellationToken: zxteam.CancellationToken) => T | Promise<T> | zxteam.Task<T>);
+	private readonly _cancellationToken: zxteam.CancellationToken;
 
-const flagSymbol: Symbol = Symbol();
-
-export type PromiseExecutor<T> = (resolve: (value?: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void;
-
-export class Task<T> extends Promise<T> implements contract.Task<T> {
-	private readonly _underlayingRootEntry?: TaskRootEntry<T>;
-	private readonly _underlayingEntry: TaskEntry<T>;
-
-	public constructor(executor: PromiseExecutor<T>, flag?: Symbol, rootEntry?: TaskRootEntry<T>) {
-		super(executor);
-
-		// The flag passed from create() static method.
-		if (flag !== flagSymbol) {
-			// This is Non-Root Task
-			// Just general Promise behaviour.
-			return;
-		}
-
-		// This instance is a Root Task due called from create() static method.
-		this._underlayingRootEntry = rootEntry;
-	}
+	private _status: TaskStatus;
+	private _promise?: Promise<T>;
+	private _result?: T;
+	private _error?: Error;
 
 	public get error(): Error {
-		if (this._status === TaskStatus.Faulted) {
-			return this._underlayingEntry.error as Error;
+		if (this._status === TaskStatus.Faulted || this._status === TaskStatus.Canceled) {
+			return this._error as Error;
 		}
-		throw new Error("Invalid operation at current state");
+		throw new InvalidOperationError("Invalid operation at current state.");
 	}
 	public get result(): T {
-		if (this._status === TaskStatus.Successed) { return this._underlayingEntry.result as T; }
-		throw new InvalidOperationError("Invalid operation at current state");
+		if (this._status === TaskStatus.Successed) { return this._result as T; }
+		if (this._error !== undefined) { throw this._error; }
+		throw new InvalidOperationError("Invalid operation at current state.");
+	}
+
+	public get cancellationToken(): zxteam.CancellationToken {
+		return this._cancellationToken;
+	}
+
+	public get promise(): Promise<T> {
+		if (this._status === TaskStatus.Created) {
+			// Start task if not started yet
+			this.start();
+		}
+
+		if (this._promise === undefined) { throw new AssertError("Promise should exists"); }
+
+		return this._promise;
 	}
 
 	public get isCompleted(): boolean {
@@ -176,144 +186,129 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		return this._status === TaskStatus.Canceled;
 	}
 
-	public then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): Task<TResult1 | TResult2> {
-		const underlayingRootEntry = this._underlayingRootEntry;
-
-		if (underlayingRootEntry !== undefined) {
-			if (this._status === TaskStatus.Created) { this.start(); }
-			const { taskWorker } = this._underlayingEntry;
-			if (taskWorker === null) { throw new AssertError(); }
-
-			if (this._status === TaskStatus.Successed) {
-				if (!underlayingRootEntry.fulfilled) {
-					underlayingRootEntry.resolve(this.result);
-					underlayingRootEntry.fulfilled = true;
+	public continue<TContinue>(
+		fnOrTask: ((parentTask: zxteam.Task<T>) => TContinue | Promise<TContinue> | zxteam.Task<TContinue>) | zxteam.Task<TContinue>
+	): zxteam.Task<TContinue> {
+		const subTask = Task.create(
+			async () => {
+				if (typeof fnOrTask === "object" && "promise" in fnOrTask) {
+					// we have not ability to pass this task to attached task, so just await for fulfill the promise
+					await this.promise;
+					return fnOrTask.promise;
 				}
-			} else if (this._status === TaskStatus.Faulted || this._status === TaskStatus.Canceled) {
-				if (!underlayingRootEntry.fulfilled) {
-					underlayingRootEntry.reject(this.error);
-					underlayingRootEntry.fulfilled = true;
-				}
-			} else {
-				// taskWorker never fails
-				taskWorker.then(() => {
-					if (this._status === TaskStatus.Successed) {
-						if (!underlayingRootEntry.fulfilled) {
-							underlayingRootEntry.resolve(this.result);
-							underlayingRootEntry.fulfilled = true;
-						}
-						return;
-					} else {
-						if (this._status === TaskStatus.Canceled) {
-							if (this._underlayingEntry.error instanceof CancelledError) {
-								if (!underlayingRootEntry.fulfilled) {
-									underlayingRootEntry.reject(this._underlayingEntry.error);
-									underlayingRootEntry.fulfilled = true;
-								}
-								return;
-							} else {
-								if (!underlayingRootEntry.fulfilled) {
-									underlayingRootEntry.reject(new CancelledError());
-									underlayingRootEntry.fulfilled = true;
-								}
-								return;
-							}
-						} else if (this._status === TaskStatus.Faulted) {
-							if (!underlayingRootEntry.fulfilled) {
-								underlayingRootEntry.reject(this.error);
-								underlayingRootEntry.fulfilled = true;
-							}
-							return;
-						}
-					}
-				});
-			}
-		}
 
-		const subTask: any = super.then(onfulfilled, onrejected);
-		subTask._underlayingEntry = this._underlayingEntry;
-		return subTask as Task<TResult1 | TResult2>;
+				await this.wait(); // wait this task for compete (ignore errors)
+				const fnResult = fnOrTask(this);
+				if (fnResult instanceof Promise) {
+					return fnResult;
+				} else if (typeof fnResult === "object" && "promise" in fnResult) {
+					return fnResult.promise;
+				}
+				return fnResult;
+			},
+			this.cancellationToken
+		);
+
+		return subTask;
 	}
 
-	public catch<TResult = never>(onrejected?: ((reason: Error) => TResult | PromiseLike<TResult>) | undefined | null): Task<T | TResult> {
-		return super.catch(onrejected) as Task<T | TResult>;
+	public then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): Promise<TResult1 | TResult2> {
+		return this.promise.then(onfulfilled, onrejected);
 	}
 
 	public start(): this {
 		if (this._status !== TaskStatus.Created) {
-			throw new Error("Invalid operation at current state. The task already started");
+			throw new InvalidOperationError("Invalid operation at current state. The task already started.");
 		}
-		if (this._underlayingEntry.taskWorker !== null) { throw new AssertError("taskWorker !== null"); }
+		if (this._promise !== undefined) { throw new AssertError("promise !== undefined"); }
 
-		const taskWorker = Promise.resolve()
+		this._promise = Promise.resolve()
 			.then(() => {
-				return (this._underlayingRootEntry as TaskRootEntry<T>).task(this._underlayingEntry.cancellationToken);
+				const taskResult = this._taskFn(this._cancellationToken);
+				if (typeof taskResult === "object" && "promise" in taskResult) {
+					return taskResult.promise;
+				}
+				return taskResult;
 			})
 			.then((result) => {
-				this._underlayingEntry.result = result;
-				this._underlayingEntry.status = TaskStatus.Successed;
+				this._result = result;
+				this._status = TaskStatus.Successed;
+				return result;
 			})
 			.catch((err) => {
-				if (this._underlayingEntry.cancellationToken.isCancellationRequested || err instanceof CancelledError) {
-					this._underlayingEntry.status = TaskStatus.Canceled;
-					if (err instanceof CancelledError) { this._underlayingEntry.error = err; }
-					return;
-				}
-				this._underlayingEntry.status = TaskStatus.Faulted;
-				this._underlayingEntry.error = WrapError.wrapIfNeeded(err);
+				throw  WrapError.wrapIfNeeded(err);
 			});
+		this._promise.catch((err) => {
+			if (err instanceof CancelledError) {
+				this._status = TaskStatus.Canceled;
+				this._error = err;
+				return;
+			} else if (err instanceof Error && err.name === "CancelledError") {
+				this._error = err;
+				this._status = TaskStatus.Canceled;
+				return;
+			}
+			this._status = TaskStatus.Faulted;
+			this._error = err;
+		});
 
-		this._underlayingEntry.taskWorker = taskWorker;
-		this._underlayingEntry.status = TaskStatus.Running;
+		this._status = TaskStatus.Running;
 
 		return this;
 	}
 
-	public wait(): Promise<void> {
-		const taskWorker = this._underlayingEntry.taskWorker;
-		return taskWorker !== null ? taskWorker : Promise.resolve();
+	public async wait(): Promise<void> {
+		try {
+			await this.promise;
+		} catch (e) {
+			/* BYPASS ANY ERRORS due method specific */
+		}
 	}
 
-	protected get _status(): TaskStatus {
-		return this._underlayingEntry.status;
+	private constructor(
+		cancellationToken: zxteam.CancellationToken,
+		taskFn: ((cancellationToken: zxteam.CancellationToken) => T | Promise<T> | zxteam.Task<T>)
+	) {
+		this._cancellationToken = cancellationToken;
+		this._taskFn = taskFn;
+		this._status = TaskStatus.Created;
 	}
 
-	public static create<T = void>(task: (cancellationToken: contract.CancellationToken) => T | Promise<T>, cancellationToken?: contract.CancellationToken): Task<T> {
+	public static create<T = void>(taskFn: (cancellationToken: zxteam.CancellationToken) => T | Promise<T> | zxteam.Task<T>, cancellationToken?: zxteam.CancellationToken): Task<T> {
 		if (cancellationToken === undefined) {
 			cancellationToken = DUMMY_CANCELLATION_TOKEN;
 		}
-
-		const rootEntry: any = { taskWorker: null, task };
-		const entry: TaskEntry<T> = { cancellationToken, status: TaskStatus.Created, taskWorker: null };
-
-		const executor: PromiseExecutor<T> = (resolve, reject) => {
-			rootEntry.resolve = resolve;
-			rootEntry.reject = reject;
-		};
-
-		const taskInstance = new Task<T>(executor, flagSymbol, rootEntry as TaskRootEntry<T>);
-		(taskInstance as any)._underlayingEntry = entry;
-		return taskInstance;
+		return new Task(cancellationToken, taskFn);
 	}
 
-	public static reject<T = never>(reason: Error): Task<T> {
-		return Task.run(() => Promise.reject(reason));
+	public static reject<T = never>(reason: Error): zxteam.Task<T> {
+		const task = new Task<T>(DUMMY_CANCELLATION_TOKEN, undefined as any);
+		task._status = TaskStatus.Faulted;
+		task._error = reason;
+		task._promise = Promise.reject(reason);
+		return task;
 	}
 
-	public static resolve(): Task<void>;
-	public static resolve<T = void>(value: T | PromiseLike<T>): Task<T>;
-	public static resolve<T>(value?: T | PromiseLike<T>): Task<T> | Task<void> {
+	public static resolve(): zxteam.Task<void>;
+	public static resolve<T = void>(value: T | PromiseLike<T>): zxteam.Task<T>;
+	public static resolve<T>(value?: T | PromiseLike<T>): zxteam.Task<T> | zxteam.Task<void> {
 		if (value !== undefined) {
 			return Task.run(() => Promise.resolve(value));
 		} else {
-			return Task.run(() => Promise.resolve());
+			const task = new Task<void>(DUMMY_CANCELLATION_TOKEN, undefined as any);
+			task._status = TaskStatus.Successed;
+			task._promise = Promise.resolve();
+			return task;
 		}
 	}
 
-	public static run<T = void>(task: (cancellationToken: contract.CancellationToken) => T | Promise<T>, cancellationToken?: contract.CancellationToken): Task<T> {
+	public static run<T = void>(task: (cancellationToken: zxteam.CancellationToken) => T | Promise<T>, cancellationToken?: zxteam.CancellationToken): zxteam.Task<T> {
 		return Task.create(task, cancellationToken).start();
 	}
 
+	/**
+	 * Create an instance on the CancellationTokenSource
+	 */
 	public static createCancellationTokenSource(): CancellationTokenSource {
 		return new CancellationTokenSourceImpl();
 	}
@@ -324,40 +319,21 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 	 * @param timeout Timeout in milliseconds for auto-cancel
 	 */
 	public static createTimeoutCancellationTokenSource(timeout: number): CancellationTokenSource {
-		const cts = Task.createCancellationTokenSource();
-
-		let timeoutHandler: number | null = setTimeout(() => {
-			timeoutHandler = null;
-			cts.cancel();
-		}, timeout);
-
-		const ctsWithTimeout: CancellationTokenSource = {
-			get isCancellationRequested() { return cts.isCancellationRequested; },
-			get token() { return cts.token; },
-			cancel(): void {
-				if (timeoutHandler !== null) {
-					clearTimeout(timeoutHandler);
-					timeoutHandler = null;
-				}
-				cts.cancel();
-			}
-		};
-
-		return ctsWithTimeout;
+		return new TimeoutCancellationTokenSourceImpl(timeout);
 	}
 
-	public static sleep(cancellationToken: contract.CancellationToken): Task<never>;
-	public static sleep(ms: number, cancellationToken?: contract.CancellationToken): Task<void>;
-	public static sleep(msOrCancellationToken: number | contract.CancellationToken, cancellationToken?: contract.CancellationToken): Task<void> {
+	public static sleep(cancellationToken: zxteam.CancellationToken): zxteam.Task<never>;
+	public static sleep(ms: number, cancellationToken?: zxteam.CancellationToken): zxteam.Task<void>;
+	public static sleep(msOrCancellationToken: number | zxteam.CancellationToken, cancellationToken?: zxteam.CancellationToken): zxteam.Task<void> {
 		const [ms, ct] = typeof msOrCancellationToken === "number" ?
 			[msOrCancellationToken, cancellationToken] : [undefined, msOrCancellationToken];
-		function worker(token: contract.CancellationToken) {
+		function worker(token: zxteam.CancellationToken) {
 			return new Promise<void>((resolve, reject) => {
 				if (token.isCancellationRequested) {
 					return reject(new CancelledError());
 				}
 
-				let timeout: number | undefined = undefined;
+				let timeout: any = undefined;
 				if (ms !== undefined) {
 					timeout = setTimeout(function () {
 						token.removeCancelListener(cancelCallback);
@@ -379,50 +355,51 @@ export class Task<T> extends Promise<T> implements contract.Task<T> {
 		return Task.run(worker, ct);
 	}
 
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>, task6: contract.Task<T6>, task7: contract.Task<T7>, task8: contract.Task<T8>, task9: contract.Task<T9>): Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>, task6: contract.Task<T6>, task7: contract.Task<T7>, task8: contract.Task<T8>): Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>, task6: Task<T6>, task7: contract.Task<T7>): Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>, task6: contract.Task<T6>): Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4, T5>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>, task5: contract.Task<T5>): Task<void>;
-	public static waitAll<T0, T1, T2, T3, T4>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>, task4: contract.Task<T4>): Task<void>;
-	public static waitAll<T0, T1, T2, T3>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>, task3: contract.Task<T3>): Task<void>;
-	public static waitAll<T0, T1, T2>(task0: contract.Task<T0>, task1: contract.Task<T1>, task2: contract.Task<T2>): Task<void>;
-	public static waitAll<T0, T1>(task0: contract.Task<T0>, task1: contract.Task<T1>): Task<void>;
-	public static waitAll<T>(task0: contract.Task<T>): Task<void>;
-	public static waitAll(tasks: contract.Task<any>[]): Task<void>;
-	public static waitAll(...tasks: contract.Task<any>[]): Task<void>;
-	public static waitAll(...tasks: any): Task<void> {
-		if (!tasks) { throw new Error("Wrong arguments"); }
-		return Task.create<void>(async () => {
-			if (tasks.length === 0) { return Promise.resolve(); }
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>, task6: zxteam.Task<T6>, task7: zxteam.Task<T7>, task8: zxteam.Task<T8>, task9: zxteam.Task<T9>): zxteam.Task<[T0, T1, T2, T3, T4, T5, T6, T7, T8, T9]>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>, task6: zxteam.Task<T6>, task7: zxteam.Task<T7>, task8: zxteam.Task<T8>): zxteam.Task<[T0, T1, T2, T3, T4, T5, T6, T7, T8]>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>, task6: Task<T6>, task7: zxteam.Task<T7>): zxteam.Task<[T0, T1, T2, T3, T4, T5, T6, T7]>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>, task6: zxteam.Task<T6>): zxteam.Task<[T0, T1, T2, T3, T4, T5, T6]>;
+	public static waitAll<T0, T1, T2, T3, T4, T5>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>): zxteam.Task<[T0, T1, T2, T3, T4, T5]>;
+	public static waitAll<T0, T1, T2, T3, T4>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>): zxteam.Task<[T0, T1, T2, T3, T4]>;
+	public static waitAll<T0, T1, T2, T3>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>): zxteam.Task<[T0, T1, T2, T3]>;
+	public static waitAll<T0, T1, T2>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>): zxteam.Task<[T0, T1, T2]>;
+	public static waitAll<T0, T1>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>): zxteam.Task<[T0, T1]>;
+	public static waitAll<T>(task0: zxteam.Task<T>): zxteam.Task<T>;
+	public static waitAll(tasks: Array<zxteam.Task<any>>): zxteam.Task<Array<any>>;
+	public static waitAll(...tasks: Array<zxteam.Task<any>>): zxteam.Task<Array<any>>;
+	public static waitAll(...tasks: any): zxteam.Task<Array<any>> {
+		return Task.run<Array<any>>(async () => {
+			if (tasks.length === 0) { return Promise.resolve([]); }
 			if (tasks.length === 1) {
 				if (Array.isArray(tasks[0])) {
 					tasks = tasks[0];
 				}
 			}
-			await Promise.all(tasks.map((task: any) => {
-				if (task._status === TaskStatus.Created) { task.start(); }
-				if (task._underlayingEntry.taskWorker === null) { throw new AssertError("Task worker not exist after start"); }
-				return task._underlayingEntry.taskWorker;
-			})); // Should never failed
-			let errors: Array<Error> = [];
+			await Promise.all(tasks.map(
+				(task: any) => task.promise.catch(() => { /** BYPASS ANY ERRORS. We collect its via task interface bellow */ })
+			)); // Should never failed
+
+			const results: Array<any> = [];
+			const errors: Array<Error> = [];
 			for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
 				const task = tasks[taskIndex];
 				if (task._status === TaskStatus.Successed) {
+					results.push(task.result);
 					continue;
 				}
-				if (task._status === TaskStatus.Faulted) {
+				if (task._status === TaskStatus.Faulted || task._status === TaskStatus.Canceled) {
 					errors.push(task.error);
-				} else if (task._status === TaskStatus.Canceled) {
-					errors.push(new CancelledError());
 				} else {
 					// Should never happened
-					throw new AssertError("Wrong task status. Should never happened");
+					throw new AssertError("Wrong task status");
 				}
 			}
+
 			if (errors.length > 0) {
 				throw new AggregateError(errors);
 			}
+
+			return results;
 		});
 	}
 }
