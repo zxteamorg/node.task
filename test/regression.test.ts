@@ -136,7 +136,7 @@ describe("Regression", function () {
 	});
 
 	describe("4.0.0", function () {
-		it("continuation task should start when parent task was completed", async function () {
+		it("continuation task should start when parent task is completed", async function () {
 			const autoRejectDefer: any = {};
 			autoRejectDefer.promise = new Promise((resolve, reject) => {
 				const timeout = setTimeout(() => {
@@ -158,6 +158,32 @@ describe("Regression", function () {
 			Task.resolve(42).continue(() => {
 				autoRejectDefer.resolve();
 			});
+
+			await autoRejectDefer.promise;
+		});
+		it("continuation task should start if parent task is finished", async function () {
+			const autoRejectDefer: any = {};
+			autoRejectDefer.promise = new Promise((resolve, reject) => {
+				const timeout = setTimeout(() => {
+					reject(new Error("continue callback was not called, but have to"));
+				}, 1000); // auto reject in 1 seconds
+				function resolveWrapper() {
+					resolve();
+					clearTimeout(timeout);
+				}
+				function rejectWrapper(reason: any) {
+					reject(reason);
+					clearTimeout(timeout);
+				}
+				autoRejectDefer.resolve = resolveWrapper;
+				autoRejectDefer.reject = rejectWrapper;
+				autoRejectDefer.timeout = setTimeout(reject, 1000); // auto reject in 1 seconds
+			});
+
+			const task = Task.resolve(Promise.resolve(42));
+			await task.wait(); // force to complete first task
+
+			task.continue(() => { autoRejectDefer.resolve(); });
 
 			await autoRejectDefer.promise;
 		});

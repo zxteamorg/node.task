@@ -5,7 +5,7 @@ import { assert } from "chai";
 import { Task } from "../src/index";
 
 describe("Flow tests", function () {
-	it("1", async function () {
+	it("Common flow", async function () {
 		const flowTask = Task
 			.create(() => {
 				console.log("Flow setup: Turn on loading screen...");

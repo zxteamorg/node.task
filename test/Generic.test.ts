@@ -1198,4 +1198,14 @@ describe("Generic tests", () => {
 		assert.instanceOf(expectedError, InvalidOperationError);
 		assert.equal(expectedError.message, "Invalid operation at current state. The task already started.");
 	});
+	it("continue on resolved task should works (static result)", async function () {
+		let wasContinuteCalled = false;
+		await Task.resolve(42).continue(() => { wasContinuteCalled = true; }).wait();
+		assert.isTrue(wasContinuteCalled, "continue callback was not called, but have to");
+	});
+	it("continue on resolved task should works (promisable result)", async function () {
+		let wasContinuteCalled = false;
+		await Task.resolve(Promise.resolve(42)).continue(() => { wasContinuteCalled = true; }).wait();
+		assert.isTrue(wasContinuteCalled, "continue callback was not called, but have to");
+	});
 });
