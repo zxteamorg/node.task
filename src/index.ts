@@ -145,6 +145,7 @@ export class Task<T> implements zxteam.Task<T> {
 	private _promise?: Promise<T>;
 	private _result?: T;
 	private _error?: Error;
+	private _continuationTasks?: Array<{ start: () => any; isStarted: boolean }>;
 
 	public get error(): Error {
 		if (this._status === TaskStatus.Faulted || this._status === TaskStatus.Canceled) {
@@ -185,6 +186,9 @@ export class Task<T> implements zxteam.Task<T> {
 	public get isCancelled(): boolean {
 		return this._status === TaskStatus.Canceled;
 	}
+	public get isStarted(): boolean {
+		return this._status !== TaskStatus.Created;
+	}
 
 	public continue<TContinue>(
 		fnOrTask: ((parentTask: zxteam.Task<T>) => TContinue | Promise<TContinue> | zxteam.Task<TContinue>) | zxteam.Task<TContinue>
@@ -197,7 +201,7 @@ export class Task<T> implements zxteam.Task<T> {
 					return fnOrTask.promise;
 				}
 
-				await this.wait(); // wait this task for compete (ignore errors)
+				await this.wait(); // wait this task for compete (wait() does not produce any errors)
 				const fnResult = fnOrTask(this);
 				if (fnResult instanceof Promise) {
 					return fnResult;
@@ -208,6 +212,13 @@ export class Task<T> implements zxteam.Task<T> {
 			},
 			this.cancellationToken
 		);
+
+		if (this.isCompleted) {
+			subTask.start();
+		} else {
+			if (this._continuationTasks === undefined) { this._continuationTasks = []; }
+			this._continuationTasks.push(subTask);
+		}
 
 		return subTask;
 	}
@@ -236,7 +247,12 @@ export class Task<T> implements zxteam.Task<T> {
 				return result;
 			})
 			.catch((err) => {
-				throw  WrapError.wrapIfNeeded(err);
+				throw WrapError.wrapIfNeeded(err);
+			}).finally(() => {
+				if (this._continuationTasks !== undefined) {
+					this._continuationTasks.forEach(subTask => { if (!subTask.isStarted) { subTask.start(); } });
+					delete this._continuationTasks;
+				}
 			});
 		this._promise.catch((err) => {
 			if (err instanceof CancelledError) {
@@ -272,6 +288,7 @@ export class Task<T> implements zxteam.Task<T> {
 		this._cancellationToken = cancellationToken;
 		this._taskFn = taskFn;
 		this._status = TaskStatus.Created;
+		this._continuationTasks = [];
 	}
 
 	public static create<T = void>(taskFn: (cancellationToken: zxteam.CancellationToken) => T | Promise<T> | zxteam.Task<T>, cancellationToken?: zxteam.CancellationToken): Task<T> {
