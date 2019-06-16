@@ -1,6 +1,6 @@
 {
 	"name": "@zxteam/task",
-	"version": "5.0.0",
+	"version": "5.0.1",
 	"description": "Task implementation of ZXTeam's contract",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
@@ -22,7 +22,7 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"@zxteam/contract": "^5.0.0"
+		"@zxteam/contract": "^5.0.1"
 	},
 	"devDependencies": {
 		"@types/node": "^11.13.14",
