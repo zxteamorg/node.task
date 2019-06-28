@@ -223,6 +223,11 @@ export class Task<T> implements zxteam.Task<T> {
 		return subTask;
 	}
 
+	public ensureSuccess(): void {
+		if (!this.isCompleted) { throw new Error("The task not finished yet."); }
+		if (!this.isSuccessed) { throw this._error; }
+	}
+
 	public then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): Promise<TResult1 | TResult2> {
 		return this.promise.then(onfulfilled, onrejected);
 	}
