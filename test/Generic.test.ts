@@ -601,7 +601,7 @@ describe("Generic tests", () => {
 		assert.isFalse(task1.isFaulted);
 	});
 	it("Should cancel a task via CancelledError like error", async () => {
-		class TestCancelledError extends Error implements zxteam.CancelledError {
+		class TestCancelledError extends Error {
 			public readonly name = "CancelledError";
 			public readonly testFlag = true;
 		}

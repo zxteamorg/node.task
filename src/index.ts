@@ -1,3 +1,19 @@
+const { name, version } = require(require("path").join(__dirname, "..", "package.json"));
+const G: any = global || window || {};
+const PACKAGE_GUARD: symbol = Symbol.for(name);
+if (PACKAGE_GUARD in G) {
+	const conflictVersion = G[PACKAGE_GUARD];
+	// tslint:disable-next-line: max-line-length
+	const msg = `Conflict module version. Look like two different version of package ${name} was loaded inside the process: ${conflictVersion} and ${version}.`;
+	if (process !== undefined && process.env !== undefined && process.env.NODE_ALLOW_CONFLICT_MODULES === "1") {
+		console.warn(msg + " This treats as warning because NODE_ALLOW_CONFLICT_MODULES is set.");
+	} else {
+		throw new Error(msg + " Use NODE_ALLOW_CONFLICT_MODULES=\"1\" to treats this error as warning.");
+	}
+} else {
+	G[PACKAGE_GUARD] = version;
+}
+
 import * as zxteam from "@zxteam/contract";
 
 
@@ -115,7 +131,7 @@ export class WrapError extends Error {
 	}
 }
 
-export class AggregateError extends Error implements zxteam.AggregateError {
+export class AggregateError extends Error {
 	public readonly name = "AggregateError";
 	public readonly innerError: Error;
 	public readonly innerErrors: Array<Error>;
@@ -125,10 +141,10 @@ export class AggregateError extends Error implements zxteam.AggregateError {
 		this.innerErrors = innerErrors;
 	}
 }
-export class CancelledError extends Error implements zxteam.CancelledError {
+export class CancelledError extends Error {
 	public readonly name = "CancelledError";
 }
-export class InvalidOperationError extends Error implements zxteam.InvalidOperationError {
+export class InvalidOperationError extends Error {
 	public readonly name = "InvalidOperationError";
 }
 export interface CancellationTokenSource {
