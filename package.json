@@ -36,12 +36,12 @@
 	"keywords": [],
 	"repository": {
 		"type": "git",
-		"url": "git+https://dev.zxteam.net/pub/node/task.git"
+		"url": "https://github.com/zxteamorg/node.task.git"
 	},
 	"bugs": {
-		"url": "https://dev.zxteam.net/pub/node/task/issues"
+		"url": "https://github.com/zxteamorg/node.task/issues"
 	},
-	"homepage": "https://dev.zxteam.net/pub/node/task#readme",
+	"homepage": "https://github.com/zxteamorg/node.task",
 	"scripts": {
 		"build": "zxbuild clean dist && cp README.md .dist/",
 		"test": "nyc --exclude submodules --exclude test --extension=\".ts\" --reporter=lcov --reporter=text --reporter=text-summary mocha \"test/**/*.test.js\" --recursive --timeout 10000",
