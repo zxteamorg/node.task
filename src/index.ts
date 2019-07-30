@@ -1,20 +1,25 @@
-const { name, version } = require(require("path").join(__dirname, "..", "package.json"));
+const { name: packageName, version: packageVersion } = require(require("path").join(__dirname, "..", "package.json"));
 const G: any = global || window || {};
-const PACKAGE_GUARD: symbol = Symbol.for(name);
+const PACKAGE_GUARD: symbol = Symbol.for(packageName);
 if (PACKAGE_GUARD in G) {
 	const conflictVersion = G[PACKAGE_GUARD];
 	// tslint:disable-next-line: max-line-length
-	const msg = `Conflict module version. Look like two different version of package ${name} was loaded inside the process: ${conflictVersion} and ${version}.`;
+	const msg = `Conflict module version. Look like two different version of package ${packageName} was loaded inside the process: ${conflictVersion} and ${packageVersion}.`;
 	if (process !== undefined && process.env !== undefined && process.env.NODE_ALLOW_CONFLICT_MODULES === "1") {
 		console.warn(msg + " This treats as warning because NODE_ALLOW_CONFLICT_MODULES is set.");
 	} else {
 		throw new Error(msg + " Use NODE_ALLOW_CONFLICT_MODULES=\"1\" to treats this error as warning.");
 	}
 } else {
-	G[PACKAGE_GUARD] = version;
+	G[PACKAGE_GUARD] = packageVersion;
 }
 
 import * as zxteam from "@zxteam/contract";
+import {
+	DUMMY_CANCELLATION_TOKEN, CancellationTokenSource,
+	SimpleCancellationTokenSource, TimeoutCancellationTokenSource
+} from "@zxteam/cancellation";
+import { AggregateError, CancelledError, InvalidOperationError, wrapErrorIfNeeded } from "@zxteam/errors";
 
 
 const enum TaskStatus {
@@ -25,133 +30,10 @@ const enum TaskStatus {
 	Faulted = 7
 }
 
-class DummyCancellationTokenImpl implements zxteam.CancellationToken {
-	public get isCancellationRequested(): boolean { return false; }
-	public addCancelListener(cb: Function): void {/* Dummy */ }
-	public removeCancelListener(cb: Function): void {/* Dummy */ }
-	public throwIfCancellationRequested(): void {/* Dummy */ }
-}
-
-export const DUMMY_CANCELLATION_TOKEN = new DummyCancellationTokenImpl();
-
-class CancellationTokenSourceImpl implements CancellationTokenSource {
-	public readonly token: zxteam.CancellationToken;
-	private readonly _cancelListeners: Array<Function> = [];
-	private _isCancellationRequested: boolean;
-
-	public constructor() {
-		this._isCancellationRequested = false;
-		const self = this;
-		this.token = {
-			get isCancellationRequested() { return self.isCancellationRequested; },
-			addCancelListener(cb) { self.addCancelListener(cb); },
-			removeCancelListener(cb) { self.removeCancelListener(cb); },
-			throwIfCancellationRequested() { self.throwIfCancellationRequested(); }
-		};
-	}
-
-	public get isCancellationRequested(): boolean { return this._isCancellationRequested; }
-
-	public cancel(): void {
-		if (this._isCancellationRequested) {
-			// Prevent to call listeners twice
-			return;
-		}
-		this._isCancellationRequested = true;
-		const errors: Array<Error> = [];
-		if (this._cancelListeners.length > 0) {
-			// Release callback. We do not need its anymore
-			const cancelListeners = this._cancelListeners.splice(0);
-			cancelListeners.forEach(cancelListener => {
-				try {
-					cancelListener();
-				} catch (e) {
-					errors.push(WrapError.wrapIfNeeded(e));
-				}
-			});
-		}
-		if (errors.length > 0) {
-			throw new AggregateError(errors);
-		}
-	}
-
-	private addCancelListener(cb: Function): void { this._cancelListeners.push(cb); }
-	private removeCancelListener(cb: Function): void {
-		const cbIndex = this._cancelListeners.indexOf(cb);
-		if (cbIndex !== -1) {
-			this._cancelListeners.splice(cbIndex, 1);
-		}
-	}
-	private throwIfCancellationRequested(): void {
-		if (this.isCancellationRequested) {
-			throw new CancelledError();
-		}
-	}
-}
-
-class TimeoutCancellationTokenSourceImpl extends CancellationTokenSourceImpl {
-	private _timeoutHandler: any;
-
-	public constructor(timeout: number) {
-		super();
-
-		this._timeoutHandler = setTimeout(() => {
-			if (this._timeoutHandler !== undefined) { delete this._timeoutHandler; }
-			super.cancel();
-		}, timeout);
-	}
-	public cancel() {
-		if (this._timeoutHandler !== undefined) {
-			clearTimeout(this._timeoutHandler);
-			delete this._timeoutHandler;
-		}
-		super.cancel();
-	}
-}
-
 class AssertError extends Error {
 	public readonly name = "AssertError";
 }
 
-export class WrapError extends Error {
-	public readonly name = "WrapError";
-	public readonly wrap: any;
-	public constructor(wrap: any) {
-		super(wrap && wrap.toString());
-		this.wrap = wrap;
-	}
-
-	public static wrapIfNeeded(likeError: any): Error | WrapError {
-		if (likeError instanceof Error) {
-			return likeError;
-		} else {
-			return new WrapError(likeError);
-		}
-
-	}
-}
-
-export class AggregateError extends Error {
-	public readonly name = "AggregateError";
-	public readonly innerError: Error;
-	public readonly innerErrors: Array<Error>;
-	public constructor(innerErrors: Array<Error>) {
-		super(innerErrors.length > 0 ? innerErrors[0].message : "AggregateError");
-		this.innerError = innerErrors[0];
-		this.innerErrors = innerErrors;
-	}
-}
-export class CancelledError extends Error {
-	public readonly name = "CancelledError";
-}
-export class InvalidOperationError extends Error {
-	public readonly name = "InvalidOperationError";
-}
-export interface CancellationTokenSource {
-	readonly isCancellationRequested: boolean;
-	readonly token: zxteam.CancellationToken;
-	cancel(): void;
-}
 
 export class Task<T> implements zxteam.Task<T> {
 	private readonly _taskFn: ((cancellationToken: zxteam.CancellationToken) => T | Promise<T> | zxteam.Task<T>);
@@ -268,7 +150,7 @@ export class Task<T> implements zxteam.Task<T> {
 				return result;
 			})
 			.catch((err) => {
-				throw WrapError.wrapIfNeeded(err);
+				throw wrapErrorIfNeeded(err);
 			}).finally(() => {
 				if (this._continuationTasks !== undefined) {
 					this._continuationTasks.forEach(subTask => { if (!subTask.isStarted) { subTask.start(); } });
@@ -342,22 +224,6 @@ export class Task<T> implements zxteam.Task<T> {
 
 	public static run<T = void>(task: (cancellationToken: zxteam.CancellationToken) => T | Promise<T>, cancellationToken?: zxteam.CancellationToken): zxteam.Task<T> {
 		return Task.create(task, cancellationToken).start();
-	}
-
-	/**
-	 * Create an instance on the CancellationTokenSource
-	 */
-	public static createCancellationTokenSource(): CancellationTokenSource {
-		return new CancellationTokenSourceImpl();
-	}
-
-	/**
-	 * Create an instance on the CancellationTokenSource with auto-cancel timeout
-	 * NOTE: Use cancel() to destroy internal timer
-	 * @param timeout Timeout in milliseconds for auto-cancel
-	 */
-	public static createTimeoutCancellationTokenSource(timeout: number): CancellationTokenSource {
-		return new TimeoutCancellationTokenSourceImpl(timeout);
 	}
 
 	public static sleep(cancellationToken: zxteam.CancellationToken): zxteam.Task<never>;

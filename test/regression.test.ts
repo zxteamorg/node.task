@@ -1,6 +1,13 @@
+import * as zxteam from "@zxteam/contract";
+import {
+	DUMMY_CANCELLATION_TOKEN, CancellationTokenSource,
+	SimpleCancellationTokenSource, TimeoutCancellationTokenSource
+} from "@zxteam/cancellation";
+import { AggregateError, CancelledError, InvalidOperationError, wrapErrorIfNeeded } from "@zxteam/errors";
+
 import { assert } from "chai";
-import { CancellationToken as CancellationTokenLike } from "@zxteam/contract";
-import { Task, AggregateError } from "../src/index";
+
+import { Task } from "../src/index";
 
 describe("Regression", function () {
 	describe("0.0.1", function () {
@@ -8,13 +15,13 @@ describe("Regression", function () {
 			let cancel1 = false;
 			let cancel2 = false;
 
-			const cts = Task.createCancellationTokenSource();
+			const cts = new SimpleCancellationTokenSource();
 
 			const defer: any = {};
 			defer.promise = new Promise(resolve => { defer.resolve = resolve; });
 
 			const task = Task.create(
-				async (ct: CancellationTokenLike): Promise<void> => {
+				async (ct: zxteam.CancellationToken): Promise<void> => {
 
 					const cb1 = () => {
 						cancel1 = true;
@@ -85,7 +92,8 @@ describe("Regression", function () {
 				assert.isDefined(expectedError);
 				assert.instanceOf(expectedError, AggregateError);
 				assert.instanceOf((expectedError as AggregateError).innerError, TestError);
-				assert.equal((expectedError as AggregateError).innerError.message, "Fake Error");
+				assert.isNotNull((expectedError as AggregateError).innerError, "Fake Error");
+				assert.equal(((expectedError as AggregateError).innerError as Error).message, "Fake Error");
 
 				assert.equal(fails, 1);
 				assert.equal(unhandledRejectionCount, 0, "Should no unhandledRejection(s)");

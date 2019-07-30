@@ -2,7 +2,7 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"name": "Debug Tests",
+			"name": "Tests",
 			"type": "node",
 			"request": "launch",
 			"preLaunchTask": "compile:test:ts",
@@ -20,16 +20,10 @@
 				"--debug-brk",
 				"test/**/*.js"
 			],
-			"cwd": "${workspaceRoot}",
 			"env": {
 				"NODE_ENV": "development"
 			},
-			"console": "internalConsole",
-			"sourceMaps": true,
-			"outFiles": [
-				"${workspaceRoot}/src/**/*.js",
-				"${workspaceRoot}/test/**/*.js"
-			]
+			"sourceMaps": true
 		}
 	]
 }

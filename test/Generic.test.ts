@@ -1,9 +1,13 @@
 import * as zxteam from "@zxteam/contract";
+import {
+	DUMMY_CANCELLATION_TOKEN, CancellationTokenSource,
+	SimpleCancellationTokenSource, TimeoutCancellationTokenSource
+} from "@zxteam/cancellation";
+import { AggregateError, CancelledError, InvalidOperationError, wrapErrorIfNeeded } from "@zxteam/errors";
+
 import { assert } from "chai";
 
-import { Task as TaskLike } from "@zxteam/contract";
-
-import { Task, AggregateError, CancelledError, WrapError, InvalidOperationError } from "../src/index";
+import { Task } from "../src/index";
 
 describe("Generic tests", () => {
 	it("Should wait for synchronous task", async () => {
@@ -196,7 +200,7 @@ describe("Generic tests", () => {
 		assert.isDefined(expectedError);
 		assert.instanceOf(expectedError, AggregateError);
 		assert.instanceOf((expectedError as AggregateError).innerError, TestError);
-		assert.equal((expectedError as AggregateError).innerError.message, "Fake Error");
+		assert.equal(((expectedError as AggregateError).innerError as Error).message, "Fake Error");
 	});
 	it("Should handle non-error fail for synchronous task", async () => {
 		const task1 = Task.create<number>(() => { throw "Fake Error"; });
@@ -212,8 +216,8 @@ describe("Generic tests", () => {
 		assert.isFalse(task1.isCancelled);
 		assert.isTrue(task1.isFaulted);
 		assert.isDefined(expectedError);
-		assert.instanceOf(expectedError, WrapError);
-		assert.equal(expectedError.wrap, "Fake Error");
+		assert.instanceOf(expectedError, Error);
+		assert.equal(expectedError.message, "Fake Error");
 	});
 	it("Should handle non-error fail for asynchronous task", async () => {
 		const task1 = Task.create<number>(() => Promise.reject("Fake Error"));
@@ -229,8 +233,8 @@ describe("Generic tests", () => {
 		assert.isFalse(task1.isCancelled);
 		assert.isTrue(task1.isFaulted);
 		assert.isDefined(expectedError);
-		assert.instanceOf(expectedError, WrapError);
-		assert.equal(expectedError.wrap, "Fake Error");
+		assert.instanceOf(expectedError, Error);
+		assert.equal(expectedError.message, "Fake Error");
 	});
 	it("Should handle all fails for synchronous tasks", async () => {
 		class TestError1 extends Error { }
@@ -501,7 +505,7 @@ describe("Generic tests", () => {
 	});
 	it("Should cancel a task via CancelListener", async () => {
 		class MyCancelError extends CancelledError { }
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		let isTimeoutHappened = false;
 		const task1 = Task.create<number>(
 			(token) => {
@@ -539,7 +543,7 @@ describe("Generic tests", () => {
 	});
 	it("Should cancel a task via isCancellationRequested", async () => {
 		class MyCancelError extends CancelledError { }
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		const task1 = Task.create<number>(
 			async (token) => {
 				for (let index = 0; index < 10; index++) {
@@ -571,7 +575,7 @@ describe("Generic tests", () => {
 		assert.isFalse(task1.isFaulted);
 	});
 	it("Should cancel a task via throwIfCancellationRequested and waitAll()", async () => {
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource =  new SimpleCancellationTokenSource();
 		cancellationTokenSource.token.throwIfCancellationRequested();
 		const task1 = Task.create<number>(
 			async (token) => {
@@ -595,7 +599,7 @@ describe("Generic tests", () => {
 		assert.isDefined(expectedError);
 		assert.instanceOf(expectedError, AggregateError);
 		assert.instanceOf((expectedError as AggregateError).innerError, CancelledError);
-		assert.isEmpty((expectedError as AggregateError).innerError.message);
+		assert.isEmpty(((expectedError as AggregateError).innerError as Error).message);
 		assert.isTrue(task1.isCompleted);
 		assert.isTrue(task1.isCancelled);
 		assert.isFalse(task1.isFaulted);
@@ -646,7 +650,7 @@ describe("Generic tests", () => {
 	});
 	it("Should not cancel a task after removeCancelListener()", async () => {
 		class MyCancelError extends Error { }
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		let isTimeoutHappened = false;
 		const task1 = Task.create<number>(
 			(token) => {
@@ -676,7 +680,7 @@ describe("Generic tests", () => {
 	});
 	it("Should allow multiple calls for removeCancelListener()", async () => {
 		class MyCancelError extends Error { }
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		let isTimeoutHappened = false;
 		const task1 = Task.create<number>(
 			(token) => {
@@ -707,7 +711,7 @@ describe("Generic tests", () => {
 		assert.equal(task1.result, 42);
 	});
 	it("Should allow multiple calls for cancel()", async () => {
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		const task1 = Task.create<number>(
 			async (token) => 42,
 			cancellationTokenSource.token
@@ -725,7 +729,7 @@ describe("Generic tests", () => {
 		assert.equal(task1.result, 42);
 	});
 	it("Should call all listeners on cancel() and then raise errors", async () => {
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		const token = cancellationTokenSource.token;
 
 		let listener1Done = false;
@@ -781,7 +785,7 @@ describe("Generic tests", () => {
 		}
 	});
 	it("Should cancel sleep() before started", async () => {
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		cancellationTokenSource.cancel();
 		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
 		await Task.sleep(25);
@@ -797,7 +801,7 @@ describe("Generic tests", () => {
 		assert.instanceOf(expectedError, CancelledError);
 	});
 	it("Should cancel sleep() after start", async () => {
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
 		await Task.sleep(25);
 
@@ -814,7 +818,7 @@ describe("Generic tests", () => {
 		assert.instanceOf(expectedError, CancelledError);
 	});
 	it("Should cancel sleep() via cancellationToken", async () => {
-		const cancellationTokenSource = Task.createCancellationTokenSource();
+		const cancellationTokenSource = new SimpleCancellationTokenSource();
 		const sleepTask = Task.sleep(cancellationTokenSource.token);
 
 		await Task.sleep(10);
@@ -834,7 +838,7 @@ describe("Generic tests", () => {
 		assert.instanceOf(expectedError, CancelledError);
 	});
 	it("Should cancel sleep() via Timeout", async () => {
-		const cancellationTokenSource = Task.createTimeoutCancellationTokenSource(25);
+		const cancellationTokenSource = new TimeoutCancellationTokenSource(25);
 
 		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
 		await Task.sleep(25);
@@ -850,7 +854,7 @@ describe("Generic tests", () => {
 		assert.instanceOf(expectedError, CancelledError);
 	});
 	it("Should cancel sleep() via Timeout before start", async () => {
-		const cancellationTokenSource = Task.createTimeoutCancellationTokenSource(24 * 60 * 60 * 1000/* long timeout */);
+		const cancellationTokenSource = new TimeoutCancellationTokenSource(24 * 60 * 60 * 1000/* long timeout */);
 
 		cancellationTokenSource.cancel();
 
@@ -869,7 +873,7 @@ describe("Generic tests", () => {
 		assert.instanceOf(expectedError, CancelledError);
 	});
 	it("Should cancel sleep() via Timeout + call cancel()", async () => {
-		const cancellationTokenSource = Task.createTimeoutCancellationTokenSource(24 * 60 * 60 * 1000/* long timeout */);
+		const cancellationTokenSource = new TimeoutCancellationTokenSource(24 * 60 * 60 * 1000/* long timeout */);
 
 		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
 
@@ -973,7 +977,8 @@ describe("Generic tests", () => {
 		assert.isTrue(task2.isSuccessed);
 	});
 	it("Should auto relase callbacks on cancel()", async () => {
-		const cts = Task.createCancellationTokenSource();
+		const cts = new SimpleCancellationTokenSource();
+
 		const cancelListeners = (cts as any)._cancelListeners;
 		const token = cts.token;
 		assert.isArray(cancelListeners);
@@ -987,7 +992,7 @@ describe("Generic tests", () => {
 		assert.throw(() => token.throwIfCancellationRequested(), CancelledError);
 	});
 	it("Propery result should throw error in case cancel()", async function () {
-		const cts = Task.createCancellationTokenSource();
+		const cts = new SimpleCancellationTokenSource();
 
 		const task = Task.create(async (token) => {
 			while (true) {
@@ -1042,8 +1047,8 @@ describe("Generic tests", () => {
 
 		assert.isTrue(taskStarted, "The task should start when catch() called");
 		assert.isTrue(testTask.isFaulted, "The task should be faulted");
-		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
-		assert.equal((expectedErr as WrapError).message, "Non error throw");
+		assert.instanceOf(expectedErr, Error, "The error produced by the task should be wrapped into Error");
+		assert.equal((expectedErr as Error).message, "Non error throw");
 	});
 	it("catch should produce callback with argument of the Error type #2", async () => {
 		let taskStarted = false;
@@ -1057,8 +1062,8 @@ describe("Generic tests", () => {
 
 		assert.isTrue(taskStarted, "The task should start when catch() called");
 		assert.isTrue(testTask.isFaulted, "The task should be faulted");
-		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
-		assert.equal((expectedErr as WrapError).message, "42");
+		assert.instanceOf(expectedErr, Error, "The error produced by the task should be wrapped into WrapError");
+		assert.equal((expectedErr as Error).message, "42");
 	});
 	it("catch should produce callback with argument of the Error type #3", async () => {
 		const errorSubj = { fake: 0 };
@@ -1073,11 +1078,11 @@ describe("Generic tests", () => {
 
 		assert.isTrue(taskStarted, "The task should start when catch() called");
 		assert.isTrue(testTask.isFaulted, "The task should be faulted");
-		assert.instanceOf(expectedErr, WrapError, "The error produced by the task should be wrapped into WrapError");
-		assert.equal((expectedErr as WrapError).message, errorSubj.toString());
+		assert.instanceOf(expectedErr, Error, "The error produced by the task should be wrapped into WrapError");
+		assert.equal((expectedErr as Error).message, errorSubj.toString());
 	});
 	it("Positive Task should provide wait (error-safe) promise", async () => {
-		const task: TaskLike = Task.create(() => new Promise(r => setTimeout(r, 10)));
+		const task: zxteam.Task = Task.create(() => new Promise(r => setTimeout(r, 10)));
 
 		assert.isFalse(task.isCancelled);
 		assert.isFalse(task.isCompleted);
@@ -1092,7 +1097,7 @@ describe("Generic tests", () => {
 		assert.isTrue(task.isSuccessed);
 	});
 	it("Fail Task should provide wait (error-safe) promise", async () => {
-		const task: TaskLike = Task.create(() => new Promise((r, j) => setTimeout(j, 10)));
+		const task: zxteam.Task = Task.create(() => new Promise((r, j) => setTimeout(j, 10)));
 
 		assert.isFalse(task.isCancelled);
 		assert.isFalse(task.isCompleted);
@@ -1107,7 +1112,7 @@ describe("Generic tests", () => {
 		assert.isFalse(task.isSuccessed);
 	});
 	it("Cancel Task should provide wait (error-safe) promise", async () => {
-		const task: TaskLike = Task.create(() => { throw new CancelledError("Test cancel"); });
+		const task: zxteam.Task = Task.create(() => { throw new CancelledError("Test cancel"); });
 
 		assert.isFalse(task.isCancelled);
 		assert.isFalse(task.isCompleted);
@@ -1122,7 +1127,7 @@ describe("Generic tests", () => {
 		assert.isFalse(task.isSuccessed);
 	});
 	it("Should be able to create task via Task.resolve()", async () => {
-		const task: TaskLike = Task.resolve();
+		const task: zxteam.Task = Task.resolve();
 
 		await task.wait();
 
@@ -1134,7 +1139,7 @@ describe("Generic tests", () => {
 	it("Should be able to create task via Task.reject()", async () => {
 		class TestError extends Error { }
 		const error = new TestError("Test fail");
-		const task: TaskLike = Task.reject(error);
+		const task: zxteam.Task = Task.reject(error);
 
 		await task.wait();
 
@@ -1147,7 +1152,7 @@ describe("Generic tests", () => {
 		assert.equal(task.error.message, "Test fail");
 	});
 	it("Should wrap non-Error exception", async () => {
-		const task: TaskLike = Task.run(() => { throw "Test fail"; });
+		const task: zxteam.Task = Task.run(() => { throw "Test fail"; });
 
 		await task.wait();
 
@@ -1156,11 +1161,11 @@ describe("Generic tests", () => {
 		assert.isTrue(task.isFaulted);
 		assert.isFalse(task.isSuccessed);
 
-		assert.instanceOf(task.error, WrapError);
+		assert.instanceOf(task.error, Error);
 		assert.equal(task.error.message, "Test fail");
 	});
 	it("Should raise InvalidOperationError exception on property 'result' before task completed", async () => {
-		const task: TaskLike = Task.sleep(100);
+		const task: zxteam.Task = Task.sleep(100);
 
 		let expectedError;
 		try {
@@ -1173,7 +1178,7 @@ describe("Generic tests", () => {
 		assert.equal(expectedError.message, "Invalid operation at current state.");
 	});
 	it("Should raise InvalidOperationError exception on property 'error' before task completed", async () => {
-		const task: TaskLike = Task.sleep(100);
+		const task: zxteam.Task = Task.sleep(100);
 
 		let expectedError;
 		try {

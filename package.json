@@ -1,12 +1,12 @@
 {
 	"name": "@zxteam/task",
-	"version": "6.0.1",
-	"description": "Task implementation of ZXTeam's contract",
+	"version": "6.0.8",
+	"description": "ZXTeam's Task",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
 	"author": {
 		"name": "ZXTeam",
-		"email": "pub@project.zxteam.org",
+		"email": "pub@zxteam.org",
 		"url": "http://www.zxteam.org"
 	},
 	"contributors": [
@@ -22,10 +22,12 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"@zxteam/contract": "^6.0.0"
+		"@zxteam/cancellation": "^6.0.7",
+		"@zxteam/contract": "^6.0.7",
+		"@zxteam/errors": "^6.0.8"
 	},
 	"devDependencies": {
-		"@types/node": "^11.13.17",
+		"@types/node": "^11.13.18",
 		"@zxnode/build": "^0.0.34"
 	},
 	"engines": {
@@ -41,8 +43,9 @@
 	},
 	"homepage": "https://dev.zxteam.net/pub/node/task#readme",
 	"scripts": {
-		"build": "zxbuild clean dist",
-		"test": "nyc --exclude submodules --exclude test --extension=\".ts\" --reporter=lcov --reporter=text --reporter=text-summary mocha \"test/**/*.test.js\" --recursive"
+		"build": "zxbuild clean dist && cp README.md .dist/",
+		"test": "nyc --exclude submodules --exclude test --extension=\".ts\" --reporter=lcov --reporter=text --reporter=text-summary mocha \"test/**/*.test.js\" --recursive --timeout 10000",
+		"test:only": "mocha --require source-map-support/register \"test/**/*.test.js\" --recursive --timeout 10000"
 	},
 	"private": true
 }
