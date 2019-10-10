@@ -1,9 +1,6 @@
-import * as zxteam from "@zxteam/contract";
-import {
-	DUMMY_CANCELLATION_TOKEN, CancellationTokenSource,
-	SimpleCancellationTokenSource, TimeoutCancellationTokenSource
-} from "@zxteam/cancellation";
-import { AggregateError, CancelledError, InvalidOperationError, wrapErrorIfNeeded } from "@zxteam/errors";
+import { CancellationToken } from "@zxteam/contract";
+import { ManualCancellationTokenSource } from "@zxteam/cancellation";
+import { AggregateError } from "@zxteam/errors";
 
 import { assert } from "chai";
 
@@ -15,13 +12,13 @@ describe("Regression", function () {
 			let cancel1 = false;
 			let cancel2 = false;
 
-			const cts = new SimpleCancellationTokenSource();
+			const cts = new ManualCancellationTokenSource();
 
 			const defer: any = {};
 			defer.promise = new Promise(resolve => { defer.resolve = resolve; });
 
 			const task = Task.create(
-				async (ct: zxteam.CancellationToken): Promise<void> => {
+				async (ct: CancellationToken): Promise<void> => {
 
 					const cb1 = () => {
 						cancel1 = true;

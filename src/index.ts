@@ -14,11 +14,8 @@ if (PACKAGE_GUARD in G) {
 	G[PACKAGE_GUARD] = packageVersion;
 }
 
-import * as zxteam from "@zxteam/contract";
-import {
-	DUMMY_CANCELLATION_TOKEN, CancellationTokenSource,
-	SimpleCancellationTokenSource, TimeoutCancellationTokenSource
-} from "@zxteam/cancellation";
+import { CancellationToken } from "@zxteam/contract";
+import { DUMMY_CANCELLATION_TOKEN } from "@zxteam/cancellation";
 import { AggregateError, CancelledError, InvalidOperationError, wrapErrorIfNeeded } from "@zxteam/errors";
 
 
@@ -35,9 +32,9 @@ class AssertError extends Error {
 }
 
 
-export class Task<T> implements zxteam.Task<T> {
-	private readonly _taskFn: ((cancellationToken: zxteam.CancellationToken) => T | Promise<T> | zxteam.Task<T>);
-	private readonly _cancellationToken: zxteam.CancellationToken;
+export class Task<T = void> {
+	private readonly _taskFn: ((cancellationToken: CancellationToken) => T | Promise<T> | Task<T>);
+	private readonly _cancellationToken: CancellationToken;
 
 	private _status: TaskStatus;
 	private _promise?: Promise<T>;
@@ -57,7 +54,7 @@ export class Task<T> implements zxteam.Task<T> {
 		throw new InvalidOperationError("Invalid operation at current state.");
 	}
 
-	public get cancellationToken(): zxteam.CancellationToken {
+	public get cancellationToken(): CancellationToken {
 		return this._cancellationToken;
 	}
 
@@ -89,8 +86,8 @@ export class Task<T> implements zxteam.Task<T> {
 	}
 
 	public continue<TContinue>(
-		fnOrTask: ((parentTask: zxteam.Task<T>) => TContinue | Promise<TContinue> | zxteam.Task<TContinue>) | zxteam.Task<TContinue>
-	): zxteam.Task<TContinue> {
+		fnOrTask: ((parentTask: Task<T>) => TContinue | Promise<TContinue> | Task<TContinue>) | Task<TContinue>
+	): Task<TContinue> {
 		const subTask = Task.create(
 			async () => {
 				if (typeof fnOrTask === "object" && "promise" in fnOrTask) {
@@ -185,8 +182,8 @@ export class Task<T> implements zxteam.Task<T> {
 	}
 
 	private constructor(
-		cancellationToken: zxteam.CancellationToken,
-		taskFn: ((cancellationToken: zxteam.CancellationToken) => T | Promise<T> | zxteam.Task<T>)
+		cancellationToken: CancellationToken,
+		taskFn: ((cancellationToken: CancellationToken) => T | Promise<T> | Task<T>)
 	) {
 		this._cancellationToken = cancellationToken;
 		this._taskFn = taskFn;
@@ -194,14 +191,14 @@ export class Task<T> implements zxteam.Task<T> {
 		this._continuationTasks = [];
 	}
 
-	public static create<T = void>(taskFn: (cancellationToken: zxteam.CancellationToken) => T | Promise<T> | zxteam.Task<T>, cancellationToken?: zxteam.CancellationToken): Task<T> {
+	public static create<T = void>(taskFn: (cancellationToken: CancellationToken) => T | Promise<T> | Task<T>, cancellationToken?: CancellationToken): Task<T> {
 		if (cancellationToken === undefined) {
 			cancellationToken = DUMMY_CANCELLATION_TOKEN;
 		}
 		return new Task(cancellationToken, taskFn);
 	}
 
-	public static reject<T = never>(reason: Error): zxteam.Task<T> {
+	public static reject<T = never>(reason: Error): Task<T> {
 		const task = new Task<T>(DUMMY_CANCELLATION_TOKEN, undefined as any);
 		task._status = TaskStatus.Faulted;
 		task._error = reason;
@@ -209,9 +206,9 @@ export class Task<T> implements zxteam.Task<T> {
 		return task;
 	}
 
-	public static resolve(): zxteam.Task<void>;
-	public static resolve<T = void>(value: T | PromiseLike<T>): zxteam.Task<T>;
-	public static resolve<T>(value?: T | PromiseLike<T>): zxteam.Task<T> | zxteam.Task<void> {
+	public static resolve(): Task<void>;
+	public static resolve<T = void>(value: T | PromiseLike<T>): Task<T>;
+	public static resolve<T>(value?: T | PromiseLike<T>): Task<T> | Task<void> {
 		if (value !== undefined) {
 			return Task.run(() => Promise.resolve(value));
 		} else {
@@ -222,16 +219,16 @@ export class Task<T> implements zxteam.Task<T> {
 		}
 	}
 
-	public static run<T = void>(task: (cancellationToken: zxteam.CancellationToken) => T | Promise<T>, cancellationToken?: zxteam.CancellationToken): zxteam.Task<T> {
+	public static run<T = void>(task: (cancellationToken: CancellationToken) => T | Promise<T>, cancellationToken?: CancellationToken): Task<T> {
 		return Task.create(task, cancellationToken).start();
 	}
 
-	public static sleep(cancellationToken: zxteam.CancellationToken): zxteam.Task<never>;
-	public static sleep(ms: number, cancellationToken?: zxteam.CancellationToken): zxteam.Task<void>;
-	public static sleep(msOrCancellationToken: number | zxteam.CancellationToken, cancellationToken?: zxteam.CancellationToken): zxteam.Task<void> {
+	public static sleep(cancellationToken: CancellationToken): Task<never>;
+	public static sleep(ms: number, cancellationToken?: CancellationToken): Task<void>;
+	public static sleep(msOrCancellationToken: number | CancellationToken, cancellationToken?: CancellationToken): Task<void> {
 		const [ms, ct] = typeof msOrCancellationToken === "number" ?
 			[msOrCancellationToken, cancellationToken] : [undefined, msOrCancellationToken];
-		function worker(token: zxteam.CancellationToken) {
+		function worker(token: CancellationToken) {
 			return new Promise<void>((resolve, reject) => {
 				if (token.isCancellationRequested) {
 					return reject(new CancelledError());
@@ -259,19 +256,19 @@ export class Task<T> implements zxteam.Task<T> {
 		return Task.run(worker, ct);
 	}
 
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>, task6: zxteam.Task<T6>, task7: zxteam.Task<T7>, task8: zxteam.Task<T8>, task9: zxteam.Task<T9>): zxteam.Task<[T0, T1, T2, T3, T4, T5, T6, T7, T8, T9]>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>, task6: zxteam.Task<T6>, task7: zxteam.Task<T7>, task8: zxteam.Task<T8>): zxteam.Task<[T0, T1, T2, T3, T4, T5, T6, T7, T8]>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>, task6: Task<T6>, task7: zxteam.Task<T7>): zxteam.Task<[T0, T1, T2, T3, T4, T5, T6, T7]>;
-	public static waitAll<T0, T1, T2, T3, T4, T5, T6>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>, task6: zxteam.Task<T6>): zxteam.Task<[T0, T1, T2, T3, T4, T5, T6]>;
-	public static waitAll<T0, T1, T2, T3, T4, T5>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>, task5: zxteam.Task<T5>): zxteam.Task<[T0, T1, T2, T3, T4, T5]>;
-	public static waitAll<T0, T1, T2, T3, T4>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>, task4: zxteam.Task<T4>): zxteam.Task<[T0, T1, T2, T3, T4]>;
-	public static waitAll<T0, T1, T2, T3>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>, task3: zxteam.Task<T3>): zxteam.Task<[T0, T1, T2, T3]>;
-	public static waitAll<T0, T1, T2>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>, task2: zxteam.Task<T2>): zxteam.Task<[T0, T1, T2]>;
-	public static waitAll<T0, T1>(task0: zxteam.Task<T0>, task1: zxteam.Task<T1>): zxteam.Task<[T0, T1]>;
-	public static waitAll<T>(task0: zxteam.Task<T>): zxteam.Task<T>;
-	public static waitAll(tasks: Array<zxteam.Task<any>>): zxteam.Task<Array<any>>;
-	public static waitAll(...tasks: Array<zxteam.Task<any>>): zxteam.Task<Array<any>>;
-	public static waitAll(...tasks: any): zxteam.Task<Array<any>> {
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>, task8: Task<T8>, task9: Task<T9>): Task<[T0, T1, T2, T3, T4, T5, T6, T7, T8, T9]>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>, task8: Task<T8>): Task<[T0, T1, T2, T3, T4, T5, T6, T7, T8]>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>): Task<[T0, T1, T2, T3, T4, T5, T6, T7]>;
+	public static waitAll<T0, T1, T2, T3, T4, T5, T6>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>): Task<[T0, T1, T2, T3, T4, T5, T6]>;
+	public static waitAll<T0, T1, T2, T3, T4, T5>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>): Task<[T0, T1, T2, T3, T4, T5]>;
+	public static waitAll<T0, T1, T2, T3, T4>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>): Task<[T0, T1, T2, T3, T4]>;
+	public static waitAll<T0, T1, T2, T3>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>): Task<[T0, T1, T2, T3]>;
+	public static waitAll<T0, T1, T2>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>): Task<[T0, T1, T2]>;
+	public static waitAll<T0, T1>(task0: Task<T0>, task1: Task<T1>): Task<[T0, T1]>;
+	public static waitAll<T>(task0: Task<T>): Task<T>;
+	public static waitAll(tasks: Array<Task<any>>): Task<Array<any>>;
+	public static waitAll(...tasks: Array<Task<any>>): Task<Array<any>>;
+	public static waitAll(...tasks: any): Task<Array<any>> {
 		return Task.run<Array<any>>(async () => {
 			if (tasks.length === 0) { return Promise.resolve([]); }
 			if (tasks.length === 1) {

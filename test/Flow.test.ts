@@ -1,10 +1,3 @@
-import * as zxteam from "@zxteam/contract";
-import {
-	DUMMY_CANCELLATION_TOKEN, CancellationTokenSource,
-	SimpleCancellationTokenSource, TimeoutCancellationTokenSource
-} from "@zxteam/cancellation";
-import { AggregateError, CancelledError, InvalidOperationError, wrapErrorIfNeeded } from "@zxteam/errors";
-
 import { assert } from "chai";
 
 import { Task } from "../src/index";
