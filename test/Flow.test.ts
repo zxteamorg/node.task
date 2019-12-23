@@ -1,6 +1,7 @@
 import { assert } from "chai";
 
 import { Task } from "../src/index";
+import { DUMMY_CANCELLATION_TOKEN, sleep } from "@zxteam/cancellation";
 
 describe("Flow tests", function () {
 	it("Common flow", async function () {
@@ -11,8 +12,8 @@ describe("Flow tests", function () {
 			.continue(Task
 				.create(() => {
 					return Task.waitAll(
-						Task.sleep(5).continue(Task.resolve(1)),
-						Task.sleep(100).continue(Task.resolve(41))
+						Task.run(() => sleep(DUMMY_CANCELLATION_TOKEN, 5)).continue(Task.resolve(1)),
+						Task.run(() => sleep(DUMMY_CANCELLATION_TOKEN, 100)).continue(Task.resolve(41))
 					).continue((prevTask) => {
 						if (prevTask.isSuccessed) {
 							const [a, b] = prevTask.result;

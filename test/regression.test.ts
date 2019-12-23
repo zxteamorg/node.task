@@ -1,5 +1,5 @@
 import { CancellationToken } from "@zxteam/contract";
-import { ManualCancellationTokenSource } from "@zxteam/cancellation";
+import { ManualCancellationTokenSource, DUMMY_CANCELLATION_TOKEN, sleep } from "@zxteam/cancellation";
 import { AggregateError } from "@zxteam/errors";
 
 import { assert } from "chai";
@@ -36,7 +36,7 @@ describe("Regression", function () {
 				cts.token
 			).start();
 
-			await Task.sleep(5);
+			await sleep(DUMMY_CANCELLATION_TOKEN, 5);
 
 			assert.isFalse(cancel1);
 			assert.isFalse(cancel2);
@@ -47,7 +47,7 @@ describe("Regression", function () {
 			assert.isTrue(cancel2, "Should call Cancel Callback 2"); // version 0.0.1 did not call cb2
 
 			defer.resolve();
-			await Task.sleep(5);
+			await sleep(DUMMY_CANCELLATION_TOKEN, 5);
 
 			assert.isTrue(cancel1);
 			assert.isTrue(cancel2);
@@ -81,7 +81,7 @@ describe("Regression", function () {
 					expectedError = e;
 				}
 
-				await Task.sleep(250);
+				await sleep(DUMMY_CANCELLATION_TOKEN, 250);
 
 				assert.isTrue(taskRoot.isCompleted);
 				assert.isFalse(taskRoot.isCancelled);

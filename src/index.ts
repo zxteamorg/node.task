@@ -223,39 +223,6 @@ export class Task<T = void> {
 		return Task.create(task, cancellationToken).start();
 	}
 
-	public static sleep(cancellationToken: CancellationToken): Task<never>;
-	public static sleep(ms: number, cancellationToken?: CancellationToken): Task<void>;
-	public static sleep(msOrCancellationToken: number | CancellationToken, cancellationToken?: CancellationToken): Task<void> {
-		const [ms, ct] = typeof msOrCancellationToken === "number" ?
-			[msOrCancellationToken, cancellationToken] : [undefined, msOrCancellationToken];
-		function worker(token: CancellationToken) {
-			return new Promise<void>((resolve, reject) => {
-				if (token.isCancellationRequested) {
-					return reject(new CancelledError());
-				}
-
-				let timeout: any = undefined;
-				if (ms !== undefined) {
-					timeout = setTimeout(function () {
-						token.removeCancelListener(cancelCallback);
-						return resolve();
-					}, ms);
-				}
-
-				function cancelCallback() {
-					token.removeCancelListener(cancelCallback);
-					if (timeout !== undefined) {
-						clearTimeout(timeout);
-					}
-					return reject(new CancelledError());
-				}
-				token.addCancelListener(cancelCallback);
-			});
-		}
-
-		return Task.run(worker, ct);
-	}
-
 	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>, task8: Task<T8>, task9: Task<T9>): Task<[T0, T1, T2, T3, T4, T5, T6, T7, T8, T9]>;
 	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7, T8>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>, task8: Task<T8>): Task<[T0, T1, T2, T3, T4, T5, T6, T7, T8]>;
 	public static waitAll<T0, T1, T2, T3, T4, T5, T6, T7>(task0: Task<T0>, task1: Task<T1>, task2: Task<T2>, task3: Task<T3>, task4: Task<T4>, task5: Task<T5>, task6: Task<T6>, task7: Task<T7>): Task<[T0, T1, T2, T3, T4, T5, T6, T7]>;

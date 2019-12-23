@@ -1,6 +1,6 @@
 {
 	"name": "@zxteam/task",
-	"version": "6.0.23",
+	"version": "6.0.41",
 	"description": "ZXTeam's Task",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
@@ -22,12 +22,12 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"@zxteam/cancellation": "^6.0.22",
-		"@zxteam/contract": "^6.0.23",
-		"@zxteam/errors": "^6.0.21"
+		"@zxteam/cancellation": "^6.0.40",
+		"@zxteam/contract": "^6.0.40",
+		"@zxteam/errors": "^6.0.41"
 	},
 	"devDependencies": {
-		"@types/node": "^11.13.22",
+		"@types/node": "^11.15.3",
 		"@zxnode/build": "^0.0.34"
 	},
 	"engines": {

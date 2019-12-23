@@ -1,7 +1,7 @@
 import { CancellationToken } from "@zxteam/contract";
 import {
 	DUMMY_CANCELLATION_TOKEN, CancellationTokenSource,
-	ManualCancellationTokenSource, TimeoutCancellationTokenSource
+	ManualCancellationTokenSource, TimeoutCancellationTokenSource, sleep
 } from "@zxteam/cancellation";
 import { AggregateError, CancelledError, InvalidOperationError, wrapErrorIfNeeded } from "@zxteam/errors";
 
@@ -526,7 +526,7 @@ describe("Generic tests", () => {
 
 		let expectedError;
 		try {
-			await Task.sleep(50); // give a time for start task1
+			await sleep(DUMMY_CANCELLATION_TOKEN, 50); // give a time for start task1
 			cancellationTokenSource.cancel();
 			await task1;
 		} catch (e) {
@@ -547,7 +547,7 @@ describe("Generic tests", () => {
 		const task1 = Task.create<number>(
 			async (token) => {
 				for (let index = 0; index < 10; index++) {
-					await Task.sleep(10);
+					await sleep(DUMMY_CANCELLATION_TOKEN, 10);
 					if (token.isCancellationRequested) {
 						throw new MyCancelError("Cancelled while wait for timer");
 					}
@@ -560,7 +560,7 @@ describe("Generic tests", () => {
 		let expectedError;
 		try {
 			task1.start();
-			await Task.sleep(50);
+			await sleep(DUMMY_CANCELLATION_TOKEN, 50);
 			cancellationTokenSource.cancel();
 			await task1;
 		} catch (e) {
@@ -575,13 +575,13 @@ describe("Generic tests", () => {
 		assert.isFalse(task1.isFaulted);
 	});
 	it("Should cancel a task via throwIfCancellationRequested and waitAll()", async () => {
-		const cancellationTokenSource =  new ManualCancellationTokenSource();
+		const cancellationTokenSource = new ManualCancellationTokenSource();
 		cancellationTokenSource.token.throwIfCancellationRequested();
 		const task1 = Task.create<number>(
 			async (token) => {
 				for (let index = 0; index < 10; index++) {
 					token.throwIfCancellationRequested();
-					await Task.sleep(10);
+					await sleep(cancellationTokenSource.token, 10);
 				}
 				return 42;
 			},
@@ -634,7 +634,7 @@ describe("Generic tests", () => {
 		const task1 = Task.create<number>(
 			async (token) => {
 				for (let index = 0; index < 10; index++) {
-					await Task.sleep(10);
+					await sleep(DUMMY_CANCELLATION_TOKEN, 10);
 					token.throwIfCancellationRequested();
 				}
 				return 42;
@@ -787,9 +787,8 @@ describe("Generic tests", () => {
 	it("Should cancel sleep() before started", async () => {
 		const cancellationTokenSource = new ManualCancellationTokenSource();
 		cancellationTokenSource.cancel();
-		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
-		await Task.sleep(25);
-
+		const sleepTask = Task.run(() => sleep(cancellationTokenSource.token, 1000));
+		await sleep(DUMMY_CANCELLATION_TOKEN, 25);
 		let expectedError;
 		try {
 			await sleepTask;
@@ -802,8 +801,8 @@ describe("Generic tests", () => {
 	});
 	it("Should cancel sleep() after start", async () => {
 		const cancellationTokenSource = new ManualCancellationTokenSource();
-		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
-		await Task.sleep(25);
+		const sleepTask = Task.run(() => sleep(cancellationTokenSource.token, 1000));
+		await sleep(DUMMY_CANCELLATION_TOKEN, 25);
 
 		cancellationTokenSource.cancel();
 
@@ -819,13 +818,13 @@ describe("Generic tests", () => {
 	});
 	it("Should cancel sleep() via cancellationToken", async () => {
 		const cancellationTokenSource = new ManualCancellationTokenSource();
-		const sleepTask = Task.sleep(cancellationTokenSource.token);
+		const sleepTask = Task.run(() => sleep(cancellationTokenSource.token));
 
-		await Task.sleep(10);
+		await sleep(DUMMY_CANCELLATION_TOKEN, 10);
 
 		cancellationTokenSource.cancel();
 
-		await Task.sleep(10);
+		await sleep(DUMMY_CANCELLATION_TOKEN, 10);
 
 		let expectedError;
 		try {
@@ -840,8 +839,8 @@ describe("Generic tests", () => {
 	it("Should cancel sleep() via Timeout", async () => {
 		const cancellationTokenSource = new TimeoutCancellationTokenSource(25);
 
-		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
-		await Task.sleep(25);
+		const sleepTask = Task.run(() => sleep(cancellationTokenSource.token, 1000));
+		await sleep(DUMMY_CANCELLATION_TOKEN, 25);
 
 		let expectedError;
 		try {
@@ -858,9 +857,9 @@ describe("Generic tests", () => {
 
 		cancellationTokenSource.cancel();
 
-		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
+		const sleepTask = Task.run(() => sleep(cancellationTokenSource.token, 1000));
 
-		await Task.sleep(25);
+		await sleep(DUMMY_CANCELLATION_TOKEN, 25);
 
 		let expectedError;
 		try {
@@ -875,9 +874,9 @@ describe("Generic tests", () => {
 	it("Should cancel sleep() via Timeout + call cancel()", async () => {
 		const cancellationTokenSource = new TimeoutCancellationTokenSource(24 * 60 * 60 * 1000/* long timeout */);
 
-		const sleepTask = Task.sleep(1000, cancellationTokenSource.token);
+		const sleepTask = Task.run(() => sleep(cancellationTokenSource.token, 1000));
 
-		await Task.sleep(25);
+		await sleep(DUMMY_CANCELLATION_TOKEN, 25);
 
 		assert.isFalse(sleepTask.isSuccessed);
 		assert.isFalse(sleepTask.isCompleted);
@@ -1165,7 +1164,7 @@ describe("Generic tests", () => {
 		assert.equal(task.error.message, "Test fail");
 	});
 	it("Should raise InvalidOperationError exception on property 'result' before task completed", async () => {
-		const task: Task = Task.sleep(100);
+		const task = Task.run(() => sleep(DUMMY_CANCELLATION_TOKEN, 100));
 
 		let expectedError;
 		try {
@@ -1178,7 +1177,7 @@ describe("Generic tests", () => {
 		assert.equal(expectedError.message, "Invalid operation at current state.");
 	});
 	it("Should raise InvalidOperationError exception on property 'error' before task completed", async () => {
-		const task: Task = Task.sleep(100);
+		const task = Task.run(() => sleep(DUMMY_CANCELLATION_TOKEN, 100));
 
 		let expectedError;
 		try {
@@ -1191,7 +1190,7 @@ describe("Generic tests", () => {
 		assert.equal(expectedError.message, "Invalid operation at current state.");
 	});
 	it("Should raise InvalidOperationError exception on start() if task already running", async () => {
-		const task = Task.sleep(100) as Task<void>;
+		const task = Task.run(() => sleep(DUMMY_CANCELLATION_TOKEN, 100));
 
 		let expectedError;
 		try {
